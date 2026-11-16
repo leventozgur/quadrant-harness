@@ -1,0 +1,45 @@
+## BULGULAR
+
+1. LLM'in ürettiği assertion'ların çoğu yanlış: 4 model, HumanEval — assertion'ların **>%62'si** ground-truth çözümde fail ediyor — https://arxiv.org/abs/2501.02901 — paper
+2. Postcondition tabanlı filtre (DeCon) yanlış assertion'ların **%63–65.5'ini** yakalıyor, Pass@1 **+%4** — https://arxiv.org/abs/2501.02901 — paper
+3. Meta TestGen-LLM'in zorunlu filtreleri: önerilerin **%75'i derleniyor, %57'si güvenilir geçiyor, yalnızca %25'i coverage artırıyor**; sınıfların %11.5'i iyileşti, önerilerin %73'ü kabul — https://arxiv.org/abs/2402.09171 — paper
+4. Meta ACH (mutant-güdümlü): 10.795 sınıf → 9.095 mutant, 571 test, **%73 kabul**; eşdeğer-mutant dedektörü P=0.79/R=0.47 → ön-işlemeyle 0.95/0.96 — https://arxiv.org/abs/2501.12862 — paper
+5. MuTAP: mutant geri bildirimi mutation score'u **%92.0–93.6'ya** çıkarıyor, 1260 mutantın 1179'u ölüyor, buggy kod **%94.06** tespit — https://arxiv.org/abs/2308.16557 — paper
+6. SWT-Bench: üretilen testler patch filtresi olarak SWE-Agent precision'ını **2 katına** çıkarıyor; test-özel diff formatı well-formed oranını **%48.6→%89.5** yapıyor — https://arxiv.org/abs/2406.12952 — paper
+7. UTBoost: SWE-bench'te **36 yetersiz-test instance**, **345 hatalı patch "passed"** sayılmış (Verified'da 26) — https://arxiv.org/abs/2506.09289 — paper
+8. CodeT dual execution agreement: HumanEval pass@1 **65.8 (+18.8 mutlak)**; iki sinyal (test uyumu + çözümler arası mutabakat) tek başına testten kritik ölçüde iyi — https://arxiv.org/abs/2207.10397 — paper
+9. AlphaCodium test-tabanlı çok aşamalı akış: CodeContests validation pass@5 **%19 → %44** — https://arxiv.org/abs/2401.08500 — paper
+10. TDD/spec+test: GPT-4 Turbo MBPP **+%12.0**, HumanEval **+%8.5**; Llama 3 **+%38.6 / +%21.95** — https://arxiv.org/abs/2402.13521 — paper
+11. Differential prompting (spec çıkarımı + diferansiyel test): QuixBugs'te failure-inducing test bulma **%75.0** — https://arxiv.org/abs/2304.11686 — paper
+12. LLM oracle'ları sanıldığından iyi: 13.866 oracle/135 Java projesi, mutation score **%43 vs insan %45**, birleşik **%50 (+25pp)** — https://www.lucadigrazia.com/papers/ase2025.pdf — paper
+13. Ama LLM'ler dışarıdan gelen oracle'ı *yargılamakta* üretmekten zayıf: **%18.18 daha düşük doğruluk** — https://arxiv.org/html/2410.21136v1 — paper
+14. Property-based testing: PBT **%68.75**, örnek-tabanlı **%68.75**, birlikte **%81.25** bug tespiti; agentic PBT **$9.93/geçerli bug**, raporların %56'sı geçerli — https://arxiv.org/html/2510.25297v1 , https://arxiv.org/html/2510.09907v1 — paper
+15. Self-repair eğrisi: 5 denemede HumanEval **+4.9–17.1pp**, MBPP **+16–30pp**, ama kazancın çoğu **ilk 2 turda**; assertion hataları en zor (~**%45** onarım), syntax/name çok daha yüksek; CoT onarım **+5.5pp** — https://arxiv.org/abs/2604.10508 — paper
+16. "Silver bullet değil": maliyet dahil edilince kazanç mütevazı, darboğaz **feedback kalitesi**; güçlü modelden feedback belirgin kazanç sağlıyor — https://arxiv.org/abs/2306.09896 — paper
+17. LLM-as-judge: en iyi output-based judge Pearson **81.32** (translation) / **68.51** (generation); pozisyon bias'ı kararı **%14'e kadar** çeviriyor; code-specialized 34B MAD 18.7 vs general 8.8 — https://arxiv.org/abs/2502.06193 , https://aclanthology.org/2026.findings-eacl.70.pdf — paper
+18. RouteLLM: GPT-4 kalitesinin **%95'i**, GPT-4 çağrılarının **%26'sı** (~%48 daha ucuz); MT-Bench'te **%85'e kadar** maliyet düşüşü (3.66x) — https://arxiv.org/abs/2406.18665 , https://www.lmsys.org/blog/2024-07-01-routellm — paper/official
+19. FrugalGPT: GPT-4 performansı **%98 daha az maliyetle** ($33.1 → $0.6); diğer setlerde %59–73 — https://arxiv.org/abs/2305.05176 — paper
+20. AutoMix cascade: benzer performansta **>%50 maliyet azaltma**, maliyet başına kazanç **+%89** — https://arxiv.org/abs/2310.12963 — paper
+21. Prompt caching (resmi fiyat): Opus 5.5 **$4 → $0.20/MTok** (0.05x), Sonnet 5.5 **$2 → $0.10/MTok**; write 1.25x (5dk) / 2x (1sa), **1 okumada break-even**; uzun promptta %90 maliyet/%85 latency — https://platform.claude.com/docs/en/build-with-claude/prompt-caching — official
+22. LLMLingua: **20x** sıkıştırma, GSM8K 77.33 vs 78.85 full-shot (**-1.5%**) — https://arxiv.org/abs/2310.05736 — paper
+23. Agentic review (Atlassian): AI yorumlarının **%38.70'i** kod değişikliğine yol açtı (insan %44.45); bug-related **%18.2 vs %6.5**; PR cycle **-%30.8**; ucuz model judge hallucination filtresi — https://arxiv.org/html/2510.05450v1 , https://www.atlassian.com/blog/ai-at-work/developer-productivity-improved-with-rovo-dev — official/paper
+24. Google ML review: yorumların **%52'si** offline çözülebilir (hedef precision %50), preview edilen edit'lerin **%40–50'si** uygulanıyor — https://research.google/blog/resolving-code-review-comments-with-ml — official
+25. Agent'ın kendi yazdığı testlerin değeri: 5.000 traj / 6 model — test yazma sıklığı çözülen ve çözülmeyen görevlerde benzer; test hacmi 500 görevde yalnız **0–13** fark yaratıyor, token farkı büyük; Opus 4.5 sinyallerinin **>%82'si print**, assert değil — https://arxiv.org/abs/2602.07900 — paper
+26. Blok-seviyesi checkpointing: setup başarı **%52→%85** ve **%46.3→%70.4**, maliyet **-%94.5** — https://arxiv.org/abs/2611.18443 — paper
+27. Commit/acceptance gate: "skor arttıysa kabul" kuralı **%30–42 yanlış** commit üretiyor; anytime-valid kapı ~0 yanlış, **%18 daha az** değerlendirme maliyeti — https://arxiv.org/abs/2606.08106 — paper
+
+## BİZDE EKSİK OLANLAR
+
+1. **Hidden test = referans çözümde PASS + seed mutantlarda FAIL** — tester SPEC'ten bir de referans çözüm yazsın; iki koşulu sağlamayan test atılsın — hedef: TEST_ERROR — yanlış hidden testlerin büyük kısmı elenir (assertion hataları tabanı %62) — https://arxiv.org/abs/2406.12952 , https://arxiv.org/abs/2506.09289
+2. **Hidden test setine mutation kapısı** — labda her test setini N seed mutant üzerinde koştur; kill oranı eşik altındaysa "zayıf test", referansta fail ediyorsa "yanlış test" olarak ayır — hedef: TEST_ERROR + gate kalitesi — iki eksenli sinyal, Haiku/Qwen karşılaştırmasını da ölçülebilir yapar — https://arxiv.org/abs/2308.16557 , https://arxiv.org/abs/2402.09171
+3. **SPEC'e "oracle tablosu"** (girdi→beklenen çıktı + sınır değerleri + hata durumları) ve tester'ın yalnız bu tablodan türetmesi — hedef: TEST_ERROR + numeric limit ihlalleri — ilk-pass gate'te ~%8–12 iyileşme beklentisi — https://arxiv.org/abs/2402.13521 , https://arxiv.org/abs/2401.08500
+4. **Judge görevini değiştir**: "test mi kod mu" yerine "test SPEC'in hangi satırıyla çelişiyor" + postcondition üretimi ve zorunlu alıntı — hedef: TEST_ERROR triyajı — yargılama yerine oracle üretimi daha güvenilir (%18.18 fark); postcondition filtresi %63–65 yakalıyor — https://arxiv.org/html/2410.21136v1 , https://arxiv.org/abs/2501.02901
+5. **İki kademeli judge** — ucuz model önce geçerlilik filtresi, yalnız belirsiz/riskli vakada pahalı model — hedef: Go maliyeti — Atlassian deseni: ucuz judge hallucination'ı üretimden önce eliyor, kabul %38.7 — https://www.atlassian.com/blog/ai-at-work/developer-productivity-improved-with-rovo-dev
+6. **Retry feedback'i = kural metni + CoT onarım**, ham hata metni değil — hedef: gate rate — CoT onarım +5.5pp; feedback kalitesi self-repair'in darboğazı — https://arxiv.org/abs/2604.10508 , https://arxiv.org/abs/2306.09896
+7. **Retry bütçesini hata sınıfına göre ayır**: syntax/import → aynı modelde 1 hızlı tur; assertion/numeric → doğrudan escalation; aynı ihlal tekrarlanırsa dur — hedef: wall time + Go cost — 3. turun getirisi ~0, assertion onarımı ~%45 — https://arxiv.org/abs/2604.10508
+8. **Worker'a test yazdırmayı bırak** (probe/print yeter), test enerjisini tester+gate'e kaydır — hedef: Go cost + wall time — test hacmi sonucu 0–13/500 değiştiriyor ama token maliyeti belirgin farklı — https://arxiv.org/abs/2602.07900
+9. **Sonnet review'ı ikiye böl**: yalnız riskli diff'te (sınır/numeric/spec-dışı dosya) Sonnet, düşük riskte GLM/DeepSeek reviewer — hedef: Claude token — %95 kalite, %26 pahalı çağrı mümkün — https://arxiv.org/abs/2406.18665 , https://arxiv.org/abs/2305.05176
+10. **Sabit prefix cache + diff-only review prompt**: rubric/repo-map/talimatlar cache'lenebilir blok, değişken kısım sonda; 68k review'da cache-hit tokenları 0.05x — hedef: Claude token — Sonnet 5.5'te $2 → $0.10/MTok, 1 okumada break-even — https://platform.claude.com/docs/en/build-with-claude/prompt-caching
+11. **Review context'ini sıkıştır**: repo map + diff + gate sonucu (~20k hedef), LLMLingua tarzı/structured özet — hedef: Claude token — 20x sıkıştırmada GSM8K -%1.5 — https://arxiv.org/abs/2310.05736
+12. **hx'e blok-seviyesi checkpoint + stall politikası**: dosya-grubu başına commit, `--resume` yerine son yeşil bloktan devam, stall'da session context'ini sıfırla — hedef: timeout/stall kaybı, wall time — setup başarı %52→85, maliyet -%94.5
+13. *(lab disiplini)* **"Skor arttı" yerine PACE tarzı eşleştirilmiş, anytime-valid KEEP kuralı** — hedef: yanlış KEEP/branch kirliliği — greedy kabulde %30–42 yanlış commit — https://arxiv.org/abs/2606.08106
