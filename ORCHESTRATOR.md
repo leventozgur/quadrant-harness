@@ -17,8 +17,9 @@ Go modellerine giden şablonlar İngilizce (araştırma + lab v5); raporları T�
 ## Başlamadan
 - BrainAtlas'tan oku: concepts/deepseek-v4-1-flash-coding-worker-usage.md ve
   concepts/worker-model-routing-under-opus-harness.md.
-- Müşteri/ERP verisi, sırlar ve güvenlik çekirdeği (kimlik doğrulama, yetkilendirme, kripto)
-  OpenCode modellerine gönderilmez. Bu işlerde bana sor; onay verirsem Sonnet 5.5 yazar.
+- 2026-11-16 kullanıcı kararı: müşteri/ERP repoları ve kimlik doğrulama/yetkilendirme kodu da hx ile
+  OpenCode modellerine verilebilir (önceki yasak kaldırıldı). Sırlar (parola, token, bağlantı cümlesi)
+  spec'e, feedback'e veya isteme yazılmaz; repoda izlenen sır dosyaları `--protect` ile korunur.
 
 ## Akış (her iş parçası için)
 1. Spec: /Users/leventozgur/Desktop/Projects/quadrant-harness/templates/spec.md şablonuyla bir dosyaya yaz (repo dışında, ör. ../specs/<iş>.md).
