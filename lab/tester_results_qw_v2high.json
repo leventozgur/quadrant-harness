@@ -1,0 +1,79 @@
+[
+ {
+  "run": "h01_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 19,
+  "seconds": 130.2,
+  "tokens_out": 7096,
+  "tokens_in": 77388,
+  "ref_detail": ""
+ },
+ {
+  "run": "h02_r1",
+  "ref_pass": true,
+  "killed": 3,
+  "mutants": 4,
+  "n_tests": 30,
+  "seconds": 224.7,
+  "tokens_out": 10833,
+  "tokens_in": 118309,
+  "ref_detail": ""
+ },
+ {
+  "run": "h03_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 34,
+  "seconds": 212.3,
+  "tokens_out": 12301,
+  "tokens_in": 73618,
+  "ref_detail": ""
+ },
+ {
+  "run": "h04_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 30,
+  "seconds": 117.3,
+  "tokens_out": 6513,
+  "tokens_in": 99426,
+  "ref_detail": ""
+ },
+ {
+  "run": "h05_r1",
+  "ref_pass": true,
+  "killed": 3,
+  "mutants": 4,
+  "n_tests": 22,
+  "seconds": 164.8,
+  "tokens_out": 9283,
+  "tokens_in": 95549,
+  "ref_detail": ""
+ },
+ {
+  "run": "h06_r1",
+  "ref_pass": false,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 32,
+  "seconds": 164.4,
+  "tokens_out": 9294,
+  "tokens_in": 84041,
+  "ref_detail": "501/lab-runs/tester/qw_v2high/h06_r1/hidden/test_token_bucket.py\", line 356, in test_large_capacity\n    self.assertAlmostEqual(tb.tokens, 0.0)\n    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^\nAssertionError: 4.1583552956581116e-07 != 0.0 within 7 places (4.1583552956581116e-07 difference)\n\n----------------------------------------------------------------------\nRan 32 tests in 0.018s\n\nFAILED (failures=1)\n"
+ },
+ {
+  "run": "h07_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 40,
+  "seconds": 134.7,
+  "tokens_out": 7695,
+  "tokens_in": 63854,
+  "ref_detail": ""
+ }
+]

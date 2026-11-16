@@ -1,0 +1,114 @@
+{
+ "prompts": {
+  "t01": "Git'te merge ile rebase arasındaki farkı tam 3 madde hâlinde yaz. Her madde '- ' ile başlasın ve en fazla 6 kelime olsun. Son satıra tek satırlık geçerli JSON yaz: {\"madde_sayisi\": 3}. Başka hiçbir şey yazma.",
+  "t02": "Aşağıdaki metni anlamı koruyarak en fazla 2 cümleyle yeniden yaz. \"ve\" kelimesini hiç kullanma. Sadece yeni metni yaz.\n\nMetin: Ekip yeni sürümü test etti ve hataları raporladı. Yönetici raporu okudu ve düzeltmeler için iki gün süre verdi. Geliştiriciler hataları düzeltti ve sürümü yeniden yayımladı.",
+  "t03": "Python'da `parse_duration(s: str) -> int` fonksiyonu yaz. Girdi; saat (h), dakika (m), saniye (s) birimlerinin bu sırayla, her biri en fazla bir kez geçen birleşimidir: örn. '2h', '45m', '1h30m', '1h2m3s', '90s'. Her birimden önce negatif olmayan bir tamsayı gelir. Toplam süreyi saniye olarak int döndür. Boş string, bilinmeyen birim, sayısı olmayan birim, tekrar eden veya sırası bozuk birim (ör. '1m1h', '1h1h') ValueError fırlatmalı. Sadece fonksiyonu içeren tek bir ```python kod bloğu ver.",
+  "t04": "Aşağıdaki SQLite şemasında 2026 yılına ait (order_date 2026-01-01 ile 2026-12-31 arası), iptal edilenler (status = 'cancelled') hariç tüm siparişlerin tutarlarını müşteri bazında topla ve en yüksek ciroya sahip ilk 3 müşteriyi azalan sırayla döndüren tek bir SQL sorgusu yaz. Sütunlar: name, revenue. Sadece tek bir ```sql kod bloğu ver.\n\nCREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\nCREATE TABLE orders (\n  id INTEGER PRIMARY KEY,\n  customer_id INTEGER NOT NULL REFERENCES customers(id),\n  order_date TEXT NOT NULL,      -- 'YYYY-MM-DD'\n  amount REAL NOT NULL,\n  status TEXT NOT NULL           -- 'completed' | 'pending' | 'cancelled'\n);",
+  "t05": "bu klasörde basit bir not uygulaması yaz",
+  "t06": "Aşağıdaki Python dosyasında mantık hatası içeren TEK bir satır var (fonksiyonun docstring'i doğru davranışı anlatıyor). O satırı bul. Format: (1) satır numarası, (2) hatalı satırın kendisi, (3) tek cümle gerekçe. Başka bir şey yazma.\n\n```python\n# Küçük yardımcı fonksiyonlar\ndef is_even_0(n):\n    \"\"\"n çift ise True döndürür.\"\"\"\n    return n % 2 == 0\n\ndef is_odd_1(n):\n    \"\"\"n tek ise True döndürür.\"\"\"\n    return n % 2 == 1\n\ndef is_positive_2(n):\n    \"\"\"n sıfırdan büyükse True döndürür.\"\"\"\n    return n > 0\n\ndef double_3(n):\n    \"\"\"n'nin iki katını döndürür.\"\"\"\n    return n * 2\n\ndef square_4(n):\n    \"\"\"n'nin karesini döndürür.\"\"\"\n    return n * n\n\ndef negate_5(n):\n    \"\"\"n'nin ters işaretlisini döndürür.\"\"\"\n    return -n\n\ndef is_zero_6(n):\n    \"\"\"n sıfırsa True döndürür.\"\"\"\n    return n == 0\n\ndef is_even_7(n):\n    \"\"\"n çift ise True döndürür.\"\"\"\n    return n % 2 == 0\n\ndef is_odd_8(n):\n    \"\"\"n tek ise True döndürür.\"\"\"\n    return n % 2 == 1\n\ndef is_positive_9(n):\n    \"\"\"n sıfırdan büyükse True döndürür.\"\"\"\n    return n > 0\n\ndef double_10(n):\n    \"\"\"n'nin iki katını döndürür.\"\"\"\n    return n * 2\n\ndef square_11(n):\n    \"\"\"n'nin karesini döndürür.\"\"\"\n    return n * n\n\ndef negate_12(n):\n    \"\"\"n'nin ters işaretlisini döndürür.\"\"\"\n    return -n\n\ndef is_zero_13(n):\n    \"\"\"n sıfırsa True döndürür.\"\"\"\n    return n == 0\n\ndef is_even_14(n):\n    \"\"\"n çift ise True döndürür.\"\"\"\n    return n % 2 == 0\n\ndef is_odd_15(n):\n    \"\"\"n tek ise True döndürür.\"\"\"\n    return n % 2 == 1\n\ndef is_positive_16(n):\n    \"\"\"n sıfırdan büyükse True döndürür.\"\"\"\n    return n > 0\n\ndef double_17(n):\n    \"\"\"n'nin iki katını döndürür.\"\"\"\n    return n * 2\n\ndef square_18(n):\n    \"\"\"n'nin karesini döndürür.\"\"\"\n    return n * n\n\ndef negate_19(n):\n    \"\"\"n'nin ters işaretlisini döndürür.\"\"\"\n    return -n\n\ndef is_zero_20(n):\n    \"\"\"n sıfırsa True döndürür.\"\"\"\n    return n == 0\n\ndef is_even_21(n):\n    \"\"\"n çift ise True döndürür.\"\"\"\n    return n % 2 == 0\n\ndef is_odd_22(n):\n    \"\"\"n tek ise True döndürür.\"\"\"\n    return n % 2 == 1\n\ndef is_positive_23(n):\n    \"\"\"n sıfırdan büyükse True döndürür.\"\"\"\n    return n > 0\n\ndef double_24(n):\n    \"\"\"n'nin iki katını döndürür.\"\"\"\n    return n * 2\n\ndef square_25(n):\n    \"\"\"n'nin karesini döndürür.\"\"\"\n    return n * n\n\ndef negate_26(n):\n    \"\"\"n'nin ters işaretlisini döndürür.\"\"\"\n    return -n\n\ndef is_zero_27(n):\n    \"\"\"n sıfırsa True döndürür.\"\"\"\n    return n == 0\n\ndef is_even_28(n):\n    \"\"\"n çift ise True döndürür.\"\"\"\n    return n % 2 == 0\n\ndef is_odd_29(n):\n    \"\"\"n tek ise True döndürür.\"\"\"\n    return n % 2 == 1\n\ndef is_positive_30(n):\n    \"\"\"n sıfırdan büyükse True döndürür.\"\"\"\n    return n > 0\n\ndef double_31(n):\n    \"\"\"n'nin iki katını döndürür.\"\"\"\n    return n * 2\n\ndef square_32(n):\n    \"\"\"n'nin karesini döndürür.\"\"\"\n    return n * n\n\ndef negate_33(n):\n    \"\"\"n'nin ters işaretlisini döndürür.\"\"\"\n    return -n\n\ndef is_zero_34(n):\n    \"\"\"n sıfırsa True döndürür.\"\"\"\n    return n == 0\n\ndef is_even_35(n):\n    \"\"\"n çift ise True döndürür.\"\"\"\n    return n % 2 == 0\n\ndef is_odd_36(n):\n    \"\"\"n tek ise True döndürür.\"\"\"\n    return n % 2 == 1\n\ndef is_positive_37(n):\n    \"\"\"n sıfırdan büyükse True döndürür.\"\"\"\n    return n > 0\n\ndef double_38(n):\n    \"\"\"n'nin iki katını döndürür.\"\"\"\n    return n * 2\n\ndef square_39(n):\n    \"\"\"n'nin karesini döndürür.\"\"\"\n    return n * n\n\ndef negate_40(n):\n    \"\"\"n'nin ters işaretlisini döndürür.\"\"\"\n    return -n\n\ndef is_zero_41(n):\n    \"\"\"n sıfırsa True döndürür.\"\"\"\n    return n == 0\n\ndef is_even_42(n):\n    \"\"\"n çift ise True döndürür.\"\"\"\n    return n % 2 == 0\n\ndef is_odd_43(n):\n    \"\"\"n tek ise True döndürür.\"\"\"\n    return n % 2 == 1\n\ndef is_positive_44(n):\n    \"\"\"n sıfırdan büyükse True döndürür.\"\"\"\n    return n > 0\n\ndef is_even_45(n):\n    \"\"\"n çift ise True döndürür.\"\"\"\n    return n % 2 == 1\n\ndef square_46(n):\n    \"\"\"n'nin karesini döndürür.\"\"\"\n    return n * n\n\ndef negate_47(n):\n    \"\"\"n'nin ters işaretlisini döndürür.\"\"\"\n    return -n\n\ndef is_zero_48(n):\n    \"\"\"n sıfırsa True döndürür.\"\"\"\n    return n == 0\n\ndef is_even_49(n):\n    \"\"\"n çift ise True döndürür.\"\"\"\n    return n % 2 == 0\n\ndef is_odd_50(n):\n    \"\"\"n tek ise True döndürür.\"\"\"\n    return n % 2 == 1\n\ndef is_positive_51(n):\n    \"\"\"n sıfırdan büyükse True döndürür.\"\"\"\n    return n > 0\n\ndef double_52(n):\n    \"\"\"n'nin iki katını döndürür.\"\"\"\n    return n * 2\n\ndef square_53(n):\n    \"\"\"n'nin karesini döndürür.\"\"\"\n    return n * n\n\ndef negate_54(n):\n    \"\"\"n'nin ters işaretlisini döndürür.\"\"\"\n    return -n\n\ndef is_zero_55(n):\n    \"\"\"n sıfırsa True döndürür.\"\"\"\n    return n == 0\n\ndef is_even_56(n):\n    \"\"\"n çift ise True döndürür.\"\"\"\n    return n % 2 == 0\n\ndef is_odd_57(n):\n    \"\"\"n tek ise True döndürür.\"\"\"\n    return n % 2 == 1\n\ndef is_positive_58(n):\n    \"\"\"n sıfırdan büyükse True döndürür.\"\"\"\n    return n > 0\n\ndef double_59(n):\n    \"\"\"n'nin iki katını döndürür.\"\"\"\n    return n * 2\n\ndef square_60(n):\n    \"\"\"n'nin karesini döndürür.\"\"\"\n    return n * n\n\ndef negate_61(n):\n    \"\"\"n'nin ters işaretlisini döndürür.\"\"\"\n    return -n\n\ndef is_zero_62(n):\n    \"\"\"n sıfırsa True döndürür.\"\"\"\n    return n == 0\n\ndef is_even_63(n):\n    \"\"\"n çift ise True döndürür.\"\"\"\n    return n % 2 == 0\n\ndef is_odd_64(n):\n    \"\"\"n tek ise True döndürür.\"\"\"\n    return n % 2 == 1\n\ndef is_positive_65(n):\n    \"\"\"n sıfırdan büyükse True döndürür.\"\"\"\n    return n > 0\n\ndef double_66(n):\n    \"\"\"n'nin iki katını döndürür.\"\"\"\n    return n * 2\n\ndef square_67(n):\n    \"\"\"n'nin karesini döndürür.\"\"\"\n    return n * n\n\ndef negate_68(n):\n    \"\"\"n'nin ters işaretlisini döndürür.\"\"\"\n    return -n\n\ndef is_zero_69(n):\n    \"\"\"n sıfırsa True döndürür.\"\"\"\n    return n == 0\n\ndef is_even_70(n):\n    \"\"\"n çift ise True döndürür.\"\"\"\n    return n % 2 == 0\n\ndef is_odd_71(n):\n    \"\"\"n tek ise True döndürür.\"\"\"\n    return n % 2 == 1\n\ndef is_positive_72(n):\n    \"\"\"n sıfırdan büyükse True döndürür.\"\"\"\n    return n > 0\n\ndef double_73(n):\n    \"\"\"n'nin iki katını döndürür.\"\"\"\n    return n * 2\n\ndef square_74(n):\n    \"\"\"n'nin karesini döndürür.\"\"\"\n    return n * n\n\ndef negate_75(n):\n    \"\"\"n'nin ters işaretlisini döndürür.\"\"\"\n    return -n\n\ndef is_zero_76(n):\n    \"\"\"n sıfırsa True döndürür.\"\"\"\n    return n == 0\n\ndef is_even_77(n):\n    \"\"\"n çift ise True döndürür.\"\"\"\n    return n % 2 == 0\n\ndef is_odd_78(n):\n    \"\"\"n tek ise True döndürür.\"\"\"\n    return n % 2 == 1\n\ndef is_positive_79(n):\n    \"\"\"n sıfırdan büyükse True döndürür.\"\"\"\n    return n > 0\n\ndef double_80(n):\n    \"\"\"n'nin iki katını döndürür.\"\"\"\n    return n * 2\n\ndef square_81(n):\n    \"\"\"n'nin karesini döndürür.\"\"\"\n    return n * n\n\ndef negate_82(n):\n    \"\"\"n'nin ters işaretlisini döndürür.\"\"\"\n    return -n\n\ndef is_zero_83(n):\n    \"\"\"n sıfırsa True döndürür.\"\"\"\n    return n == 0\n\ndef is_even_84(n):\n    \"\"\"n çift ise True döndürür.\"\"\"\n    return n % 2 == 0\n\ndef is_odd_85(n):\n    \"\"\"n tek ise True döndürür.\"\"\"\n    return n % 2 == 1\n\ndef is_positive_86(n):\n    \"\"\"n sıfırdan büyükse True döndürür.\"\"\"\n    return n > 0\n\ndef double_87(n):\n    \"\"\"n'nin iki katını döndürür.\"\"\"\n    return n * 2\n\ndef square_88(n):\n    \"\"\"n'nin karesini döndürür.\"\"\"\n    return n * n\n\ndef negate_89(n):\n    \"\"\"n'nin ters işaretlisini döndürür.\"\"\"\n    return -n\n\ndef is_zero_90(n):\n    \"\"\"n sıfırsa True döndürür.\"\"\"\n    return n == 0\n\ndef is_even_91(n):\n    \"\"\"n çift ise True döndürür.\"\"\"\n    return n % 2 == 0\n\ndef is_odd_92(n):\n    \"\"\"n tek ise True döndürür.\"\"\"\n    return n % 2 == 1\n\ndef is_positive_93(n):\n    \"\"\"n sıfırdan büyükse True döndürür.\"\"\"\n    return n > 0\n\ndef double_94(n):\n    \"\"\"n'nin iki katını döndürür.\"\"\"\n    return n * 2\n\ndef square_95(n):\n    \"\"\"n'nin karesini döndürür.\"\"\"\n    return n * n\n\ndef negate_96(n):\n    \"\"\"n'nin ters işaretlisini döndürür.\"\"\"\n    return -n\n\ndef is_zero_97(n):\n    \"\"\"n sıfırsa True döndürür.\"\"\"\n    return n == 0\n\n\nif __name__ == '__main__':\n    print('ok')\n```",
+  "t06b": "Bu klasördeki `app.py` dosyasında mantık hatası içeren TEK bir satır var (fonksiyonun docstring'i doğru davranışı anlatıyor). Dosyayı okuyup o satırı bul; dosyayı değiştirme. Format: (1) satır numarası, (2) hatalı satırın kendisi, (3) tek cümle gerekçe. Başka bir şey yazma.",
+  "t07": "Bu klasördeki projede `textutils/core.py` dosyasına `word_count(text: str) -> dict[str, int]` fonksiyonunu ekle: metni küçük harfe çevir, kelime olarak yalnızca [a-z0-9]+ dizilerini say, {kelime: adet} sözlüğü döndür (boş metin için {}). `tests/test_core.py` dosyasına bu fonksiyon için en az 4 yeni test ekle; mevcut testleri silme veya değiştirme. Sonunda proje kökünde `python3 -m unittest -q` koştur, tüm testler geçmeli. Ne yaptığını kısaca raporla.",
+  "t08": "Bu klasördeki proje için bir README.md yaz. En fazla 15 satır olsun. Koda dokunma; yalnızca README.md dosyasını oluştur.",
+  "t09": "Python requests kütüphanesindeki `requests.get_with_retry()` fonksiyonunu 3 deneme ve 0.5 saniye backoff ile nasıl kullanırım? Kısa bir örnek ver.",
+  "t10": "Bu klasördeki notes.md dosyasını oku ve 3 maddede özetle.",
+  "t11": "Python'da `max_overlap_point(intervals: list[tuple[int, int]]) -> int` fonksiyonu yaz. Her aralık yarı-açıktır: (start, end) aralığı start <= x < end olan tamsayı x noktalarını kapsar; start < end garantidir. En çok aralık tarafından kapsanan tamsayı noktayı döndür; birden fazla nokta eşit sayıda aralıkla kapsanıyorsa en küçüğünü döndür. Boş liste için ValueError fırlat. Sadece fonksiyonu içeren tek bir ```python kod bloğu ver.",
+  "t12": "Bugünün tarihi 2026-11-14. Aşağıdaki 6 satırdan yalnızca gerçekleşmiş siparişleri çıkar ve şu şemaya uyan bir JSON dizisi döndür: [{\"musteri\": string, \"urun\": string, \"adet\": integer, \"tarih\": \"YYYY-MM-DD\"}]. Sadece JSON yaz, başka hiçbir şey yazma.\n\n1. Ayşe Yılmaz dün 3 adet klavye sipariş etti.\n2. Hava bugün çok güzel.\n3. Mehmet Kaya 2026-11-10 tarihinde 12 kutu A4 kâğıt sipariş etti.\n4. Toplantı saat 15:00'e ertelendi.\n5. Zeynep Demir bugün 1 monitör sipariş verdi.\n6. Ali geçen ay bir laptop almayı düşündü ama vazgeçti."
+ },
+ "runs": [
+  [
+   "t01",
+   "t01",
+   null
+  ],
+  [
+   "t02",
+   "t02",
+   null
+  ],
+  [
+   "t03",
+   "t03",
+   null
+  ],
+  [
+   "t04",
+   "t04",
+   null
+  ],
+  [
+   "t05",
+   "t05",
+   null
+  ],
+  [
+   "t06",
+   "t06",
+   null
+  ],
+  [
+   "t06b",
+   "t06b",
+   null
+  ],
+  [
+   "t07",
+   "t07",
+   null
+  ],
+  [
+   "t08",
+   "t08",
+   null
+  ],
+  [
+   "t09",
+   "t09",
+   null
+  ],
+  [
+   "t10",
+   "t10",
+   null
+  ],
+  [
+   "t11_low1",
+   "t11",
+   "low"
+  ],
+  [
+   "t11_low2",
+   "t11",
+   "low"
+  ],
+  [
+   "t11_high1",
+   "t11",
+   "high"
+  ],
+  [
+   "t11_high2",
+   "t11",
+   "high"
+  ],
+  [
+   "t11_high3",
+   "t11",
+   "high"
+  ],
+  [
+   "t11_max1",
+   "t11",
+   "max"
+  ],
+  [
+   "t11_max2",
+   "t11",
+   "max"
+  ],
+  [
+   "t12",
+   "t12",
+   null
+  ]
+ ]
+}

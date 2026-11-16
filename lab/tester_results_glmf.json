@@ -1,0 +1,90 @@
+[
+ {
+  "run": "h01_r1",
+  "ref_pass": false,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 25,
+  "seconds": 118.5,
+  "tokens_out": 8832,
+  "tokens_in": 83593,
+  "ref_detail": "count.py\", line 34, in test_discount_is_exactly_one_tenth\n    self.assertEqual(bulk_discount(Item(\"b\", Decimal(\"15.00\"), 10)), Decimal(\"4.50\"))\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Decimal('15.0000') != Decimal('4.50')\n\n----------------------------------------------------------------------\nRan 25 tests in 0.001s\n\nFAILED (failures=1)\n"
+ },
+ {
+  "run": "h01_r2",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 17,
+  "seconds": 88.4,
+  "tokens_out": 6284,
+  "tokens_in": 87396,
+  "ref_detail": ""
+ },
+ {
+  "run": "h02_r1",
+  "ref_pass": false,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 39,
+  "seconds": 134.2,
+  "tokens_out": 8629,
+  "tokens_in": 189042,
+  "ref_detail": "i\"\\nİç Anadolu,Pul,7,\"iki\\nsatır\"\\n' != 'regi[54 chars]n,0,\"müşteri \"\"acil\"\" dedi\"\\n\"İç Anadolu\",Pul,7,\"iki\\nsatır\"\\n'\n  region,product,qty,note\n  Marmara,\"Vida, M4\",120,\n  Ege,Somun,0,\"müşteri \"\"acil\"\" dedi\"\n- İç Anadolu,Pul,7,\"iki\n+ \"İç Anadolu\",Pul,7,\"iki\n? +          +\n  satır\"\n\n\n----------------------------------------------------------------------\nRan 39 tests in 0.183s\n\nFAILED (failures=1)\n"
+ },
+ {
+  "run": "h03_r1",
+  "ref_pass": false,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 39,
+  "seconds": 111.4,
+  "tokens_out": 8298,
+  "tokens_in": 56783,
+  "ref_detail": "t recent call last):\n  File \"/private/tmp/claude-501/lab-runs/tester/glmf/h03_r1/hidden/test_workdays.py\", line 79, in test_sunday_to_monday_is_0\n    self.assertEqual(business_days_between(SUN, MON), 0)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: -5 != 0\n\n----------------------------------------------------------------------\nRan 39 tests in 0.033s\n\nFAILED (failures=1)\n"
+ },
+ {
+  "run": "h04_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 39,
+  "seconds": 156.7,
+  "tokens_out": 10942,
+  "tokens_in": 180656,
+  "ref_detail": ""
+ },
+ {
+  "run": "h05_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 22,
+  "seconds": 55.5,
+  "tokens_out": 3846,
+  "tokens_in": 55110,
+  "ref_detail": ""
+ },
+ {
+  "run": "h06_r1",
+  "ref_pass": false,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 25,
+  "seconds": 79.5,
+  "tokens_out": 5840,
+  "tokens_in": 49696,
+  "ref_detail": "e/tmp/claude-501/lab-runs/tester/glmf/h06_r1/hidden/test_token_bucket.py\", line 179, in test_allow_still_works_after_clock_backwards\n    self.assertTrue(tb.allow(1.0))    # saat yeniden ilerlediğinde refill çalışır\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^\nAssertionError: False is not true\n\n----------------------------------------------------------------------\nRan 25 tests in 0.002s\n\nFAILED (failures=1)\n"
+ },
+ {
+  "run": "h07_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 47,
+  "seconds": 163.8,
+  "tokens_out": 11658,
+  "tokens_in": 49841,
+  "ref_detail": ""
+ }
+]

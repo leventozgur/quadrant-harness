@@ -1,0 +1,8 @@
+qw_v3high h01_r1: {'seconds': 130.6, 'output_tokens': 7198, 'reasoning_tokens': 0, 'input_tokens': 60, 'cache_read': 127329, 'steps': 10, 'tool_calls': 15, 'errors': 0, 'timeout': False, 'model': 'opencode-go/qwen3.7-plus#high', 'wall_seconds': 134.5}
+qw_v3high h02_r1: {'seconds': 204.0, 'output_tokens': 11619, 'reasoning_tokens': 0, 'input_tokens': 42, 'cache_read': 76873, 'steps': 7, 'tool_calls': 9, 'errors': 0, 'timeout': False, 'model': 'opencode-go/qwen3.7-plus#high', 'wall_seconds': 206.5}
+qw_v3high h03_r1: {'seconds': 171.6, 'output_tokens': 9695, 'reasoning_tokens': 0, 'input_tokens': 42, 'cache_read': 92016, 'steps': 7, 'tool_calls': 7, 'errors': 0, 'timeout': False, 'model': 'opencode-go/qwen3.7-plus#high', 'wall_seconds': 174.0}
+qw_v3high h04_r1: {'seconds': 243.5, 'output_tokens': 14505, 'reasoning_tokens': 0, 'input_tokens': 42, 'cache_read': 92745, 'steps': 7, 'tool_calls': 7, 'errors': 0, 'timeout': False, 'model': 'opencode-go/qwen3.7-plus#high', 'wall_seconds': 246.3}
+qw_v3high h05_r1: {'seconds': 125.7, 'output_tokens': 6817, 'reasoning_tokens': 0, 'input_tokens': 60, 'cache_read': 121823, 'steps': 10, 'tool_calls': 11, 'errors': 0, 'timeout': False, 'model': 'opencode-go/qwen3.7-plus#high', 'wall_seconds': 128.2}
+qw_v3high h06_r1: {'seconds': 212.3, 'output_tokens': 12620, 'reasoning_tokens': 0, 'input_tokens': 36, 'cache_read': 110069, 'steps': 6, 'tool_calls': 6, 'errors': 0, 'timeout': False, 'model': 'opencode-go/qwen3.7-plus#high', 'wall_seconds': 214.1}
+qw_v3high h07_r1: {'seconds': 107.0, 'output_tokens': 6256, 'reasoning_tokens': 0, 'input_tokens': 30, 'cache_read': 51982, 'steps': 5, 'tool_calls': 5, 'errors': 0, 'timeout': False, 'model': 'opencode-go/qwen3.7-plus#high', 'wall_seconds': 109.4}
+DONE

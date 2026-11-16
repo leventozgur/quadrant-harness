@@ -1,0 +1,79 @@
+[
+ {
+  "run": "h01_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 29,
+  "seconds": 172.3,
+  "tokens_out": 11762,
+  "tokens_in": 112269,
+  "ref_detail": ""
+ },
+ {
+  "run": "h02_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 42,
+  "seconds": 325.7,
+  "tokens_out": 20505,
+  "tokens_in": 145847,
+  "ref_detail": ""
+ },
+ {
+  "run": "h03_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 57,
+  "seconds": 348.8,
+  "tokens_out": 22541,
+  "tokens_in": 294266,
+  "ref_detail": ""
+ },
+ {
+  "run": "h04_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 78,
+  "seconds": 578.1,
+  "tokens_out": 37718,
+  "tokens_in": 200659,
+  "ref_detail": ""
+ },
+ {
+  "run": "h05_r1",
+  "ref_pass": true,
+  "killed": 3,
+  "mutants": 4,
+  "n_tests": 20,
+  "seconds": 204.4,
+  "tokens_out": 13267,
+  "tokens_in": 126144,
+  "ref_detail": ""
+ },
+ {
+  "run": "h06_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 37,
+  "seconds": 595.8,
+  "tokens_out": 35274,
+  "tokens_in": 836128,
+  "ref_detail": ""
+ },
+ {
+  "run": "h07_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 67,
+  "seconds": 527.8,
+  "tokens_out": 36575,
+  "tokens_in": 255533,
+  "ref_detail": ""
+ }
+]

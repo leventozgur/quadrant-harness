@@ -1,0 +1,90 @@
+[
+ {
+  "run": "h01_r1",
+  "ref_pass": false,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 13,
+  "seconds": 101.4,
+  "tokens_out": 6435,
+  "tokens_in": 78535,
+  "ref_detail": "idden/test_pricing_hidden.py\", line 57, in test_order_total_save5_at_exactly_100\n    self.assertEqual(order_total(items, coupon=\"SAVE5\"), Decimal(\"95.00\"))\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Decimal('90.00') != Decimal('95.00')\n\n----------------------------------------------------------------------\nRan 13 tests in 0.001s\n\nFAILED (failures=2)\n"
+ },
+ {
+  "run": "h01_r2",
+  "ref_pass": false,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 14,
+  "seconds": 108.8,
+  "tokens_out": 6355,
+  "tokens_in": 89553,
+  "ref_detail": "  File \"/private/tmp/claude-501/lab-runs/tester/kimi27/h01_r2/hidden/test_pricing.py\", line 61, in test_order_total_rounds_half_up\n    self.assertEqual(order_total(items), expected)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Decimal('3.00') != Decimal('3.33')\n\n----------------------------------------------------------------------\nRan 14 tests in 0.001s\n\nFAILED (failures=2)\n"
+ },
+ {
+  "run": "h02_r1",
+  "ref_pass": false,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 21,
+  "seconds": 208.5,
+  "tokens_out": 12356,
+  "tokens_in": 241653,
+  "ref_detail": "egi[52 chars]mun,0,\"müşteri \"\"acil\"\" dedi\"\\nİç Anadolu,Pul,7,\"iki\\nsatır\"\\n' != 'regi[52 chars]mun,0,\"müşteri \"\"acil\"\" dedi\"\\nİç Anadolu,Pul,7,\"iki\\nsatır\"'\n  region,product,qty,note\n  Marmara,\"Vida, M4\",120,\n  Ege,Somun,0,\"müşteri \"\"acil\"\" dedi\"\n  İç Anadolu,Pul,7,\"iki\n  satır\"\n- \n\n\n----------------------------------------------------------------------\nRan 21 tests in 0.037s\n\nFAILED (failures=1)\n"
+ },
+ {
+  "run": "h03_r1",
+  "ref_pass": false,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 35,
+  "seconds": 71.5,
+  "tokens_out": 5420,
+  "tokens_in": 89582,
+  "ref_detail": "-------\nTraceback (most recent call last):\n  File \"/private/tmp/claude-501/lab-runs/tester/kimi27/h03_r1/hidden/test_workdays.py\", line 235, in test_ten_year_span_runs_under_one_second\n    self.assertEqual(result, 2609)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^\nAssertionError: 2602 != 2609\n\n----------------------------------------------------------------------\nRan 35 tests in 0.001s\n\nFAILED (failures=2)\n"
+ },
+ {
+  "run": "h04_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 20,
+  "seconds": 111.3,
+  "tokens_out": 9147,
+  "tokens_in": 69148,
+  "ref_detail": ""
+ },
+ {
+  "run": "h05_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 12,
+  "seconds": 80.0,
+  "tokens_out": 6744,
+  "tokens_in": 69722,
+  "ref_detail": ""
+ },
+ {
+  "run": "h06_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 20,
+  "seconds": 110.4,
+  "tokens_out": 8485,
+  "tokens_in": 84606,
+  "ref_detail": ""
+ },
+ {
+  "run": "h07_r1",
+  "ref_pass": false,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 38,
+  "seconds": 166.3,
+  "tokens_out": 11236,
+  "tokens_in": 250080,
+  "ref_detail": "rivate/tmp/claude-501/lab-runs/tester/kimi27/h07_r1/hidden/test_csvline.py\", line 140, in test_escaped_quote_at_end_without_closing_quote_raises_value_error\n    with self.assertRaises(ValueError):\n         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^\nAssertionError: ValueError not raised\n\n----------------------------------------------------------------------\nRan 38 tests in 0.002s\n\nFAILED (failures=1, errors=1)\n"
+ }
+]

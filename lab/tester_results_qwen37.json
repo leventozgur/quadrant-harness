@@ -1,0 +1,90 @@
+[
+ {
+  "run": "h01_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 24,
+  "seconds": 112.6,
+  "tokens_out": 6555,
+  "tokens_in": 59171,
+  "ref_detail": ""
+ },
+ {
+  "run": "h01_r2",
+  "ref_pass": true,
+  "killed": 3,
+  "mutants": 4,
+  "n_tests": 40,
+  "seconds": 189.3,
+  "tokens_out": 10041,
+  "tokens_in": 106696,
+  "ref_detail": ""
+ },
+ {
+  "run": "h02_r1",
+  "ref_pass": true,
+  "killed": 3,
+  "mutants": 4,
+  "n_tests": 41,
+  "seconds": 135.1,
+  "tokens_out": 7941,
+  "tokens_in": 59198,
+  "ref_detail": ""
+ },
+ {
+  "run": "h03_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 26,
+  "seconds": 96.0,
+  "tokens_out": 5725,
+  "tokens_in": 35080,
+  "ref_detail": ""
+ },
+ {
+  "run": "h04_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 49,
+  "seconds": 147.2,
+  "tokens_out": 8707,
+  "tokens_in": 59229,
+  "ref_detail": ""
+ },
+ {
+  "run": "h05_r1",
+  "ref_pass": true,
+  "killed": 3,
+  "mutants": 4,
+  "n_tests": 25,
+  "seconds": 91.8,
+  "tokens_out": 5265,
+  "tokens_in": 56216,
+  "ref_detail": ""
+ },
+ {
+  "run": "h06_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 34,
+  "seconds": 100.6,
+  "tokens_out": 5919,
+  "tokens_in": 45989,
+  "ref_detail": ""
+ },
+ {
+  "run": "h07_r1",
+  "ref_pass": false,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 61,
+  "seconds": 162.3,
+  "tokens_out": 9334,
+  "tokens_in": 102399,
+  "ref_detail": "iz\n    split_csv_line(' a , \"b, c\" , d '),\n    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"/private/tmp/claude-501/lab-runs/tester/qwen37/h07_r1/hidden/../project/csvline.py\", line 22, in split_csv_line\n    raise ValueError(\"tırnaksız alanda tırnak\")\nValueError: tırnaksız alanda tırnak\n\n----------------------------------------------------------------------\nRan 61 tests in 0.002s\n\nFAILED (errors=1)\n"
+ }
+]

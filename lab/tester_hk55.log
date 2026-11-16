@@ -1,0 +1,8 @@
+hk55 h01_r1: {'seconds': 29.3, 'output_tokens': 4571, 'reasoning_tokens': 2452, 'input_tokens': 10, 'cache_read': 56917, 'steps': 4, 'tool_calls': 5, 'errors': 0, 'timeout': False, 'model': 'opencode-go/claude-haiku-5-5', 'wall_seconds': 32.4}
+hk55 h02_r1: {'seconds': 32.5, 'output_tokens': 4465, 'reasoning_tokens': 3419, 'input_tokens': 8, 'cache_read': 36205, 'steps': 3, 'tool_calls': 2, 'errors': 0, 'timeout': False, 'model': 'opencode-go/claude-haiku-5-5', 'wall_seconds': 33.9}
+hk55 h03_r1: {'seconds': 25.6, 'output_tokens': 4080, 'reasoning_tokens': 2085, 'input_tokens': 6, 'cache_read': 20652, 'steps': 2, 'tool_calls': 1, 'errors': 0, 'timeout': False, 'model': 'opencode-go/claude-haiku-5-5', 'wall_seconds': 27.0}
+hk55 h04_r1: {'seconds': 42.1, 'output_tokens': 6018, 'reasoning_tokens': 4134, 'input_tokens': 10, 'cache_read': 59920, 'steps': 4, 'tool_calls': 7, 'errors': 0, 'timeout': False, 'model': 'opencode-go/claude-haiku-5-5', 'wall_seconds': 43.5}
+hk55 h05_r1: {'seconds': 27.6, 'output_tokens': 3975, 'reasoning_tokens': 2538, 'input_tokens': 10, 'cache_read': 52094, 'steps': 4, 'tool_calls': 4, 'errors': 0, 'timeout': False, 'model': 'opencode-go/claude-haiku-5-5', 'wall_seconds': 28.8}
+hk55 h06_r1: {'seconds': 37.1, 'output_tokens': 6043, 'reasoning_tokens': 2747, 'input_tokens': 12, 'cache_read': 80454, 'steps': 5, 'tool_calls': 4, 'errors': 0, 'timeout': False, 'model': 'opencode-go/claude-haiku-5-5', 'wall_seconds': 38.4}
+hk55 h07_r1: {'seconds': 27.4, 'output_tokens': 4248, 'reasoning_tokens': 2106, 'input_tokens': 10, 'cache_read': 60666, 'steps': 4, 'tool_calls': 3, 'errors': 0, 'timeout': False, 'model': 'opencode-go/claude-haiku-5-5', 'wall_seconds': 28.6}
+DONE

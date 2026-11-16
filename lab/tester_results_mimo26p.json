@@ -1,0 +1,112 @@
+[
+ {
+  "run": "h01_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 29,
+  "seconds": 335.4,
+  "tokens_out": 17721,
+  "tokens_in": 187799,
+  "ref_detail": ""
+ },
+ {
+  "run": "h01_r2",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 30,
+  "seconds": 382.3,
+  "tokens_out": 23619,
+  "tokens_in": 157651,
+  "ref_detail": ""
+ },
+ {
+  "run": "h02_r1",
+  "ref_pass": false,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 41,
+  "seconds": 823.6,
+  "tokens_out": 47861,
+  "tokens_in": 607257,
+  "ref_detail": "/claude-501/lab-runs/tester/mimo26p/h02_r1/hidden/test_constraints.py\", line 77, in test_formatter_works_with_stdlib_csv_blocked\n    self.assertEqual(p.returncode, 0, p.stderr)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 1 != 0 : unexpected output: 'a,b\\n\"x,y\",'\n\n\n----------------------------------------------------------------------\nRan 41 tests in 0.250s\n\nFAILED (failures=1)\n"
+ },
+ {
+  "run": "h02_r2",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 60,
+  "seconds": 876.4,
+  "tokens_out": 46613,
+  "tokens_in": 681522,
+  "ref_detail": ""
+ },
+ {
+  "run": "h03_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 42,
+  "seconds": 203.7,
+  "tokens_out": 13767,
+  "tokens_in": 145130,
+  "ref_detail": ""
+ },
+ {
+  "run": "h03_r2",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 49,
+  "seconds": 177.6,
+  "tokens_out": 11322,
+  "tokens_in": 131462,
+  "ref_detail": ""
+ },
+ {
+  "run": "h04_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 49,
+  "seconds": 363.5,
+  "tokens_out": 21260,
+  "tokens_in": 192691,
+  "ref_detail": ""
+ },
+ {
+  "run": "h05_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 21,
+  "seconds": 322.6,
+  "tokens_out": 12997,
+  "tokens_in": 118131,
+  "ref_detail": ""
+ },
+ {
+  "run": "h06_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 39,
+  "seconds": 490.2,
+  "tokens_out": 28546,
+  "tokens_in": 507973,
+  "ref_detail": ""
+ },
+ {
+  "run": "h07_r1",
+  "ref_pass": false,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 59,
+  "seconds": 153.4,
+  "tokens_out": 9901,
+  "tokens_in": 109770,
+  "ref_detail": "n test_kacisli_alan_bosluklarla\n    self.assertEqual(split_csv_line('\" \"\" \"'), [' \" \" '])\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Lists differ: [' \" '] != [' \" \" ']\n\nFirst differing element 0:\n' \" '\n' \" \" '\n\n- [' \" ']\n+ [' \" \" ']\n?     ++\n\n\n----------------------------------------------------------------------\nRan 59 tests in 0.001s\n\nFAILED (failures=1, errors=1)\n"
+ }
+]
