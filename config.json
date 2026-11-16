@@ -7,11 +7,11 @@
       "timeout_s": 2400
     },
     "tester": {
-      "model": "opencode-go/claude-haiku-5-5",
+      "model": "opencode-go/qwen3.7-plus#high",
       "template": "tester.md",
       "cwd": "hidden",
-      "note": "2026-11-16 lab v6: Haiku 5.5 (default effort) ref-pass 7/7, kill 28/28, 222 s, ~$0.03; real BA-38/BA-32b 2 TEST_HATASI, ~$0.01/task. Previous: Qwen3.7 Plus#high 7/7, 25/28, 1195 s; real 4 TEST_HATASI, ~$0.13/task (fallback). Watch TEST_HATASI count on the next 2-3 real tasks; revert to fallback if worse than Qwen.",
-      "fallback": "opencode-go/qwen3.7-plus#high"
+      "note": "2026-11-16 reverted to Qwen3.7 Plus#high after real CodartERP P1-P6: Haiku 5.5 produced 38 TEST_HATASI over 6 tasks (~6.3/task vs Qwen ~2/task). Haiku kept as fallback. 2026-11-16 lab v6: Haiku 5.5 (default effort) ref-pass 7/7, kill 28/28, 222 s, ~$0.03; real BA-38/BA-32b 2 TEST_HATASI, ~$0.01/task. Previous: Qwen3.7 Plus#high 7/7, 25/28, 1195 s; real 4 TEST_HATASI, ~$0.13/task (fallback). Watch TEST_HATASI count on the next 2-3 real tasks; revert to fallback if worse than Qwen.",
+      "fallback": "opencode-go/claude-haiku-5-5"
     },
     "escalate": {
       "model": "opencode-go/glm-5.3-flash#high",
