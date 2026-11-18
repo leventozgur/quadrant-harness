@@ -2,9 +2,10 @@
 """hx — small harness the Opus orchestrator drives. Stdlib only.
 
   hx.py new    <task> [--base REF] [--branch NAME] [--setup CMD]   worktree (+ setup) + hidden-test dir
-  hx.py call   <role> <task> <spec.md> [--read-only] [--resume]
+  hx.py call   <role> <task> <spec.md> [--read-only] [--resume] [--force-retry]
                                                    run the role's OpenCode model; prints only its final text
-                                                   (--resume continues that role's last session, e.g. after TIMEOUT)
+                                                   (--resume continues that role's last session, e.g. after TIMEOUT;
+                                                   worker/escalate calls are capped per phase, --force-retry overrides)
   hx.py pair   <task> <spec.md>                    tester and worker in parallel (independent inputs)
   hx.py triage <task> <spec.md>                    judge model classifies failing hidden tests; writes
                                                    worker_feedback.txt (rules only, no test code)
@@ -326,7 +327,7 @@ def rate_limited(raw, err):
     return False
 
 
-def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=False, max_chars=None, reap=True, timeout_s=None, resume=False):
+def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=False, max_chars=None, reap=True, timeout_s=None, resume=False, force=False):
     """Run one role; returns (final_text, summary_line). feedback = path or None."""
     role = CFG["roles"].get(role_name)
     if not role:
@@ -385,6 +386,8 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
            "session": m.group(1) if m else session, "resumed": bool(resume),
            "wall": round(time.time() - t0, 1), "steps": steps, "tool_calls": tools, "errors": errors,
            "timeout": timeout, "stalled": stalled, "attempts": attempts, "hidden_access": (not sees_hidden) and (str(p["hidden"]) in raw or "/.git/hx/" in raw), "tokens": tok, "go_cost_est": est_cost(model, step_toks), "price_v": 2, "reaped": reaped}
+    if force:
+        rec["forced"] = True
     with _lock:
         metric(rec)
     full = final.strip()
@@ -410,8 +413,59 @@ def last_session(task, role_name):
 
 
 def cmd_call(a):
-    _, out, line = run_role(a.role, a.task, a.spec, a.feedback, a.model, a.read_only, a.max_chars, timeout_s=a.timeout, resume=a.resume)
+    force = getattr(a, "force_retry", False)
+    check_retry_budget(a.task, a.role, force=force, resume=a.resume)
+    _, out, line = run_role(a.role, a.task, a.spec, a.feedback, a.model, a.read_only, a.max_chars,
+                            timeout_s=a.timeout, resume=a.resume, force=force)
     print(out); print("\n" + line)
+
+
+def max_worker_retries():
+    """config.max_worker_retries; 2 when the key is missing (or holds something unusable)."""
+    try:
+        return max(0, int(CFG.get("max_worker_retries", 2)))
+    except (TypeError, ValueError):
+        return 2
+
+
+def phase_calls(task, role):
+    """Non-resumed `call` records for `task` in the current phase: everything after the task's last
+    `phase_commit` record (all of them when the task has no commit yet)."""
+    mp = state_dir() / "metrics.jsonl"
+    recs = []
+    for line in (mp.read_text().splitlines() if mp.exists() else []):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(r, dict) and r.get("task") == task:
+            recs.append(r)
+    cut = 0
+    for i, r in enumerate(recs):
+        if r.get("event") == "phase_commit":
+            cut = i + 1
+    return [r for r in recs[cut:]
+            if r.get("event") == "call" and r.get("role") == role and not r.get("resumed")]
+
+
+def check_retry_budget(task, role, force=False, resume=False):
+    """Refuse a `call` that would exceed the phase budget (HX-28): one worker call plus max_worker_retries
+    retries, then exactly one escalate. A resumed call continues an earlier attempt, so it is never counted
+    and never refused; `--force-retry` overrides the budget. tester/judge/pair are not limited."""
+    limit = {"worker": 1 + max_worker_retries(), "escalate": 1}.get(role)
+    if limit is None or force or resume:
+        return
+    used = len(phase_calls(task, role))
+    if used < limit:
+        return
+    if role == "worker":
+        sys.exit(f"hx: worker retry limit reached for this phase ({used} calls, allowed {limit}: first call + "
+                 f"{limit - 1} retries); run `hx call escalate {task} <spec>` instead (--force-retry overrides)")
+    sys.exit(f"hx: escalate already called once in this phase; stop and report to the user, do not call "
+             f"escalate again (--force-retry overrides)")
 
 
 def exit_text(code):
@@ -460,7 +514,7 @@ def cmd_triage(a):
     # Only verdict lines in the template's form ("KOD_HATASI — rule — what the code does"); prose such as
     # "KOD_HATASI yok. ..." is not a verdict and must never reach the worker (it may quote test details).
     verdict = lambda tag: [l.strip() for l in full.splitlines() if re.match(tag + r"\s*[—–-]\s+\S", l.strip())]
-    code, test = verdict("KOD_HATASI"), verdict("TEST_HATASI")
+    code, test, unclear = verdict("KOD_HATASI"), verdict("TEST_HATASI"), verdict("BELIRSIZ")
     fb = p["state"] / "worker_feedback.txt"
     vis = p["state"] / "visible_failure.txt"
     parts = []
@@ -469,12 +523,16 @@ def cmd_triage(a):
     if code:
         parts.append("Gizli kabul testleri şu spec kurallarının ihlal edildiğini gösteriyor (test kodu paylaşılmaz):\n"
                      + "\n".join(re.sub(r"^KOD_HATASI\s*[—-]\s*", "- ", l) for l in code))
-    fb.write_text("\n\n".join(parts) if parts else "")
-    (p["state"] / "test_issues.txt").write_text("\n".join(test))
-    metric({"task": a.task, "event": "triage", "code_errors": len(code), "test_errors": len(test)})
+    fb.write_text("\n\n".join(parts) if parts else "")  # BELIRSIZ lines never reach the worker
+    issues = list(test)
+    if unclear:  # a separate heading, written only when there is at least one BELIRSIZ line
+        issues += ["BELIRSIZ:"] + unclear
+    (p["state"] / "test_issues.txt").write_text("\n".join(issues))
+    metric({"task": a.task, "event": "triage", "code_errors": len(code), "test_errors": len(test),
+            "unclear": len(unclear)})
     print(out); print("\n" + line)
-    print(f"[hx] triage: code_errors={len(code)} test_errors={len(test)}; worker feedback: {fb}"
-          + (f"; test issues: {p['state'] / 'test_issues.txt'}" if test else ""))
+    print(f"[hx] triage: code_errors={len(code)} test_errors={len(test)} unclear={len(unclear)}; worker feedback: {fb}"
+          + (f"; test issues: {p['state'] / 'test_issues.txt'}" if test or unclear else ""))
 
 
 # ------------------------------------------------------------------ gate
@@ -750,13 +808,15 @@ def cmd_report(a):
         elif r["event"] == "gate":
             t["gates"] += 1; t["gate_fail"] += r["gate"] == "FAIL"
         elif r["event"] == "triage":
-            t.setdefault("triage", [0, 0]); t["triage"][0] += r.get("code_errors", 0); t["triage"][1] += r.get("test_errors", 0)
+            t.setdefault("triage", [0, 0, 0])
+            t["triage"][0] += r.get("code_errors", 0); t["triage"][1] += r.get("test_errors", 0)
+            t["triage"][2] += r.get("unclear", 0)
         elif r["event"] == "note":
             t["notes"].update({k: v for k, v in r.items() if k not in ("task", "event", "ts")})
     print(f"{'task':20} {'calls':32} {'gates':>5} {'fail':>4} {'go$':>7}  notes")
     for name, t in tasks.items():
         calls = " ".join(f"{k}:{v}" for k, v in t["calls"].items())
-        tri = f" triage(code/test)={t['triage'][0]}/{t['triage'][1]}" if "triage" in t else ""
+        tri = f" triage(code/test/unclear)={t['triage'][0]}/{t['triage'][1]}/{t['triage'][2]}" if "triage" in t else ""
         print(f"{name:20} {calls:32} {t['gates']:>5} {t['gate_fail']:>4} {t['cost']:>7.3f}  {t['notes']}{tri}")
 
 
@@ -774,6 +834,7 @@ def main():
     s.add_argument("--feedback"); s.add_argument("--model"); s.add_argument("--read-only", action="store_true")
     s.add_argument("--max-chars", type=int, default=CFG["max_chars"]); s.add_argument("--timeout", type=int, help="seconds (default: role or config timeout_s)")
     s.add_argument("--resume", action="store_true", help="continue this role's last session for the task (after TIMEOUT/STALLED)")
+    s.add_argument("--force-retry", action="store_true", help="call even when the phase's retry budget is used up (recorded as forced)")
     s.set_defaults(fn=cmd_call)
     s = sp.add_parser("gate"); s.add_argument("task"); s.add_argument("--test"); s.add_argument("--hidden-cmd")
     s.add_argument("--allow"); s.add_argument("--protect")
