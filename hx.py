@@ -2,13 +2,14 @@
 """hx — small harness the Opus orchestrator drives. Stdlib only.
 
   hx.py new    <task> [--base REF] [--branch NAME] [--setup CMD]   worktree (+ setup) + hidden-test dir
-  hx.py call   <role> <task> <spec.md> [--read-only] [--resume]
+  hx.py call   <role> <task> <spec.md> [--read-only] [--resume] [--force-retry]
                                                    run the role's OpenCode model; prints only its final text
-                                                   (--resume continues that role's last session, e.g. after TIMEOUT)
+                                                   (--resume continues that role's last session, e.g. after TIMEOUT;
+                                                   worker/escalate calls are capped per phase, --force-retry overrides)
   hx.py pair   <task> <spec.md>                    tester and worker in parallel (independent inputs)
   hx.py triage <task> <spec.md>                    judge model classifies failing hidden tests; writes
                                                    worker_feedback.txt (rules only, no test code)
-  hx.py gate   <task> --test CMD [--hidden-cmd CMD] [--allow GLOBS] [--protect GLOBS]
+  hx.py gate   <task> --test CMD [--hidden-cmd CMD] --allow GLOBS [--protect GLOBS] [--no-tests]
   hx.py diff   <task> [--all]                      write the diff for the reviewer (current phase; --all = whole task)
   hx.py commit <task> -m MSG --review ONAY [--phase N] [--next TEXT]
                                                    commit an approved phase in the worktree; next phase diffs from here;
@@ -20,7 +21,7 @@
 
 State lives in <git-common-dir>/hx (inside .git, never in a diff). Roles and models: config.json.
 """
-import argparse, fnmatch, json, os, re, shlex, subprocess, sys, threading, time
+import argparse, json, os, re, shlex, subprocess, sys, threading, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -264,7 +265,69 @@ def run_streaming(args, cwd, env, limit, stall_limit):
     return "".join(out), err, timeout, stalled
 
 
-def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=False, max_chars=None, reap=True, timeout_s=None, resume=False):
+RATE_LIMIT_SIGNALS = ("rate limit", "rate_limit", "usage limit", "too many requests", "429")
+# "429" is a status code, not a digit sequence: a millisecond timestamp (1795004290000) or an id such as
+# "msg_429"/"ses_429" must not fake a signal, while 429, "HTTP 429" and `"statusCode": 429` still count.
+STATUS_429 = re.compile(r"(?<!\w)429(?!\w)")
+
+# Transport metadata whose values may contain "429" by accident (a millisecond timestamp, a session or
+# message id).
+META_KEYS = ("timestamp", "sessionID", "messageID")
+# The envelope of an event object: those names plus the event's own "type". Only the event object carries
+# an envelope; a NESTED "type" such as "rate_limit_error" names the error kind and must stay searchable.
+EVENT_META_KEYS = META_KEYS + ("type",)
+
+
+def strip_meta(obj):
+    """Copy of a TOP-LEVEL event object without its envelope (`EVENT_META_KEYS`), so timestamp/id digits are
+    never searched.
+
+    Only the event object itself has an envelope. Nested objects are payload and are copied unchanged: a
+    nested `"type": "rate_limit_error"` and any nested error message/status ("HTTP 429", `"statusCode": 429`)
+    keep their values, and a nested timestamp or id is not silently dropped either.
+    """
+    if not isinstance(obj, dict):
+        return obj
+    return {k: v for k, v in obj.items() if k not in EVENT_META_KEYS}
+
+
+def error_payload(e):
+    """Searchable text of one `"type": "error"` event: the event object without its top-level envelope, with
+    every nested field kept, serialised back to JSON."""
+    return json.dumps(strip_meta(e), ensure_ascii=False, default=str).lower()
+
+
+def has_signal(text):
+    """True when `text` mentions a rate limit; "429" only counts as a standalone status code."""
+    low = text.lower()
+    if any(s in low for s in RATE_LIMIT_SIGNALS if s != "429"):
+        return True
+    return bool(STATUS_429.search(low))
+
+
+def rate_limited(raw, err):
+    """True when this attempt carries a rate-limit signal: in stderr, or in an error event's payload.
+
+    Model prose ("text" events) and tool input/output never count — a task that merely writes about a rate
+    limiter must not be retried. `raw`/`err` are one attempt's stdout/stderr.
+    """
+    low = err.lower()
+    if has_signal(low):
+        return True
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            e = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(e, dict) and e.get("type") == "error" and has_signal(error_payload(e)):
+            return True
+    return False
+
+
+def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=False, max_chars=None, reap=True, timeout_s=None, resume=False, force=False):
     """Run one role; returns (final_text, summary_line). feedback = path or None."""
     role = CFG["roles"].get(role_name)
     if not role:
@@ -296,19 +359,25 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
     args.append(prompt)
     env = dict(os.environ, PWD=str(cwd))
     with _lock:
-        n = len(list(p["state"].glob(f"{role_name}-*.jsonl"))) + 1
+        # only plain "<role>-<n>.jsonl" files count; "<role>-<n>.attempt<k>.jsonl" retries must not shift n
+        n = sum(1 for f in p["state"].glob(f"{role_name}-*.jsonl") if f.stem[len(role_name) + 1:].isdigit()) + 1
         (p["state"] / f"{role_name}-{n}.jsonl").write_text("")  # reserve the number
     t0 = time.time()
     raw, err, timeout = "", "", False
     limit = timeout_s or role.get("timeout_s") or CFG["timeout_s"]
     stall_limit = role.get("stall_s") or CFG.get("stall_s", 900)
     stalled = False
+    attempts = 0
     for attempt in range(4):
         raw, err, timeout, stalled = run_streaming(args, cwd, env, limit, stall_limit)
-        low = (raw + err).lower()
-        if ("usage limit" in low or "rate limit" in low) and attempt < 3:
-            time.sleep(90); continue
-        break
+        attempts = attempt + 1
+        steps_now = parse_events(raw)[2]
+        # retry only a clean-looking rate-limited attempt: no step finished AND a signal in stderr/an error event.
+        # timeouts/stalls are never retried, and the last of the 4 attempts is always final.
+        if timeout or stalled or steps_now or attempt == 3 or not rate_limited(raw, err):
+            break
+        (p["state"] / f"{role_name}-{n}.attempt{attempts}.jsonl").write_text(raw)
+        time.sleep(CFG.get("rate_limit_wait_s", 90))
     (p["state"] / f"{role_name}-{n}.jsonl").write_text(raw)
     reaped = reap_orphans([p["worktree"], p["hidden"]]) if reap else 0
     final, tok, steps, tools, errors, secs, step_toks = parse_events(raw)
@@ -316,7 +385,9 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
     rec = {"task": task, "event": "call", "role": role_name, "n": n, "model": model, "seconds": secs,
            "session": m.group(1) if m else session, "resumed": bool(resume),
            "wall": round(time.time() - t0, 1), "steps": steps, "tool_calls": tools, "errors": errors,
-           "timeout": timeout, "stalled": stalled, "hidden_access": (not sees_hidden) and (str(p["hidden"]) in raw or "/.git/hx/" in raw), "tokens": tok, "go_cost_est": est_cost(model, step_toks), "price_v": 2, "reaped": reaped}
+           "timeout": timeout, "stalled": stalled, "attempts": attempts, "hidden_access": (not sees_hidden) and (str(p["hidden"]) in raw or "/.git/hx/" in raw), "tokens": tok, "go_cost_est": est_cost(model, step_toks), "price_v": 2, "reaped": reaped}
+    if force:
+        rec["forced"] = True
     with _lock:
         metric(rec)
     full = final.strip()
@@ -342,15 +413,80 @@ def last_session(task, role_name):
 
 
 def cmd_call(a):
-    _, out, line = run_role(a.role, a.task, a.spec, a.feedback, a.model, a.read_only, a.max_chars, timeout_s=a.timeout, resume=a.resume)
+    force = getattr(a, "force_retry", False)
+    check_retry_budget(a.task, a.role, force=force, resume=a.resume)
+    _, out, line = run_role(a.role, a.task, a.spec, a.feedback, a.model, a.read_only, a.max_chars,
+                            timeout_s=a.timeout, resume=a.resume, force=force)
     print(out); print("\n" + line)
+
+
+def max_worker_retries():
+    """config.max_worker_retries; 2 when the key is missing (or holds something unusable)."""
+    try:
+        return max(0, int(CFG.get("max_worker_retries", 2)))
+    except (TypeError, ValueError):
+        return 2
+
+
+def phase_calls(task, role):
+    """Non-resumed `call` records for `task` in the current phase: everything after the task's last
+    `phase_commit` record (all of them when the task has no commit yet)."""
+    mp = state_dir() / "metrics.jsonl"
+    recs = []
+    for line in (mp.read_text().splitlines() if mp.exists() else []):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(r, dict) and r.get("task") == task:
+            recs.append(r)
+    cut = 0
+    for i, r in enumerate(recs):
+        if r.get("event") == "phase_commit":
+            cut = i + 1
+    return [r for r in recs[cut:]
+            if r.get("event") == "call" and r.get("role") == role and not r.get("resumed")]
+
+
+def check_retry_budget(task, role, force=False, resume=False):
+    """Refuse a `call` that would exceed the phase budget (HX-28): one worker call plus max_worker_retries
+    retries, then exactly one escalate. A resumed call continues an earlier attempt, so it is never counted
+    and never refused; `--force-retry` overrides the budget. tester/judge/pair are not limited."""
+    limit = {"worker": 1 + max_worker_retries(), "escalate": 1}.get(role)
+    if limit is None or force or resume:
+        return
+    used = len(phase_calls(task, role))
+    if used < limit:
+        return
+    if role == "worker":
+        sys.exit(f"hx: worker retry limit reached for this phase ({used} calls, allowed {limit}: first call + "
+                 f"{limit - 1} retries); run `hx call escalate {task} <spec>` instead (--force-retry overrides)")
+    sys.exit(f"hx: escalate already called once in this phase; stop and report to the user, do not call "
+             f"escalate again (--force-retry overrides)")
+
+
+def exit_text(code):
+    """SystemExit.code as a message: a string code is already the message, an int becomes "exit code N"."""
+    if code is None or code == 0:
+        return "exit"
+    return f"exit code {code}" if isinstance(code, int) else str(code)
 
 
 def cmd_pair(a):
     """Tester and worker read the same spec and never each other's output, so they run concurrently."""
-    res = {}
+    res, fails = {}, {}
+
     def go(role):
-        res[role] = run_role(role, a.task, a.spec, max_chars=a.max_chars, reap=False)
+        try:
+            res[role] = run_role(role, a.task, a.spec, max_chars=a.max_chars, reap=False)
+        except SystemExit as e:  # sys.exit inside a thread only ends that thread; record it instead
+            fails[role] = exit_text(e.code)
+        except Exception as e:  # noqa: BLE001 - one failing role must not lose the other role's output
+            fails[role] = f"{type(e).__name__}: {e}"
+
     th = [threading.Thread(target=go, args=(r,)) for r in ("tester", "worker")]
     for t in th: t.start()
     for t in th: t.join()
@@ -359,7 +495,13 @@ def cmd_pair(a):
     if reaped:
         print(f"[hx] pair: stopped {reaped} leftover processes")
     for role in ("tester", "worker"):
-        print(f"===== {role.upper()}\n{res[role][1]}\n{res[role][2]}\n")
+        if role in res:
+            print(f"===== {role.upper()}\n{res[role][1]}\n{res[role][2]}\n")
+    for role in ("tester", "worker"):
+        if role in fails:
+            print(f"[hx] pair: {role} failed: {fails[role]}", file=sys.stderr)
+    if fails:
+        sys.exit(2)
 
 
 def cmd_triage(a):
@@ -372,7 +514,7 @@ def cmd_triage(a):
     # Only verdict lines in the template's form ("KOD_HATASI — rule — what the code does"); prose such as
     # "KOD_HATASI yok. ..." is not a verdict and must never reach the worker (it may quote test details).
     verdict = lambda tag: [l.strip() for l in full.splitlines() if re.match(tag + r"\s*[—–-]\s+\S", l.strip())]
-    code, test = verdict("KOD_HATASI"), verdict("TEST_HATASI")
+    code, test, unclear = verdict("KOD_HATASI"), verdict("TEST_HATASI"), verdict("BELIRSIZ")
     fb = p["state"] / "worker_feedback.txt"
     vis = p["state"] / "visible_failure.txt"
     parts = []
@@ -381,23 +523,100 @@ def cmd_triage(a):
     if code:
         parts.append("Gizli kabul testleri şu spec kurallarının ihlal edildiğini gösteriyor (test kodu paylaşılmaz):\n"
                      + "\n".join(re.sub(r"^KOD_HATASI\s*[—-]\s*", "- ", l) for l in code))
-    fb.write_text("\n\n".join(parts) if parts else "")
-    (p["state"] / "test_issues.txt").write_text("\n".join(test))
-    metric({"task": a.task, "event": "triage", "code_errors": len(code), "test_errors": len(test)})
+    fb.write_text("\n\n".join(parts) if parts else "")  # BELIRSIZ lines never reach the worker
+    issues = list(test)
+    if unclear:  # a separate heading, written only when there is at least one BELIRSIZ line
+        issues += ["BELIRSIZ:"] + unclear
+    (p["state"] / "test_issues.txt").write_text("\n".join(issues))
+    metric({"task": a.task, "event": "triage", "code_errors": len(code), "test_errors": len(test),
+            "unclear": len(unclear)})
     print(out); print("\n" + line)
-    print(f"[hx] triage: code_errors={len(code)} test_errors={len(test)}; worker feedback: {fb}"
-          + (f"; test issues: {p['state'] / 'test_issues.txt'}" if test else ""))
+    print(f"[hx] triage: code_errors={len(code)} test_errors={len(test)} unclear={len(unclear)}; worker feedback: {fb}"
+          + (f"; test issues: {p['state'] / 'test_issues.txt'}" if test or unclear else ""))
 
 
 # ------------------------------------------------------------------ gate
+def _nul_split(raw):
+    """Split NUL-separated git output; a path with spaces stays one entry."""
+    return [x for x in raw.split("\0") if x]
+
+
 def changed_files(wt, base):
-    tracked = sh(["git", "diff", "--name-only", base], cwd=wt).stdout.split()
-    untracked = sh(["git", "ls-files", "--others", "--exclude-standard"], cwd=wt).stdout.split()
+    tracked = _nul_split(sh(["git", "diff", "--name-only", "-z", base], cwd=wt).stdout)
+    untracked = _nul_split(sh(["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=wt).stdout)
     return sorted(set(tracked + untracked))
 
 
+def _glob_segment(seg):
+    """Regex for one path segment: `*`/`?`/character classes never cross a "/"."""
+    out, i = [], 0
+    while i < len(seg):
+        c = seg[i]
+        i += 1
+        if c == "*":
+            out.append("[^/]*")
+        elif c == "?":
+            out.append("[^/]")
+        elif c == "[":
+            j = i
+            if j < len(seg) and seg[j] == "!":  # fnmatch: only "!" negates a class, "^" is literal
+                j += 1
+            if j < len(seg) and seg[j] == "]":
+                j += 1
+            while j < len(seg) and seg[j] != "]":
+                j += 1
+            if j >= len(seg):  # unterminated class: a literal "["
+                out.append(r"\[")
+                continue
+            stuff, i = seg[i:j], j + 1
+            if stuff == "":  # empty class: literal "["
+                out.append(r"\[")
+                continue
+            cls = stuff.replace("\\", "\\\\").replace("[", r"\[").replace("]", r"\]")
+            if stuff.startswith("!"):  # fnmatch: only "!" negates a class
+                cls = "^" + cls[1:]
+            elif stuff.startswith("^"):  # "^" is a literal character inside the class
+                cls = "\\" + cls
+            out.append("(?!/)[" + cls + "]")
+        else:
+            out.append(re.escape(c))
+    return "".join(out)
+
+
+def _glob_regex(pattern):
+    """Full-path regex. A `**` that is a whole segment matches zero or more directory segments."""
+    parts = pattern.split("/")
+    out, need_sep, i = [], False, 0
+    while i < len(parts):
+        part = parts[i]
+        if part == "**":
+            last = i == len(parts) - 1
+            if last:
+                # a trailing `**` covers what is UNDER the prefix: "src/**" is "src/<something>",
+                # while a bare "**" is every path.
+                out.append("(?:/[^/]+)+" if need_sep else "[^/]+(?:/[^/]+)*")
+                need_sep = False
+            else:
+                if need_sep:
+                    out.append("/")
+                out.append("(?:[^/]+/)*")
+                need_sep = False
+        else:
+            if need_sep:
+                out.append("/")
+            out.append(_glob_segment(part))
+            need_sep = True
+        i += 1
+    return "".join(out)
+
+
+def glob_match(path, pattern):
+    """Whole-path match of a repo-relative, "/"-separated path against one glob pattern."""
+    return re.fullmatch(_glob_regex(pattern), path) is not None
+
+
 def match_any(path, globs):
-    return any(fnmatch.fnmatch(path, g) for g in globs)
+    return any(glob_match(path, g) for g in globs)
 
 
 def tail(s, n=30):
@@ -405,50 +624,95 @@ def tail(s, n=30):
     return "\n".join(lines[-n:])
 
 
+def _as_text(v):
+    if not v:
+        return ""
+    return v.decode(errors="replace") if isinstance(v, bytes) else v
+
+
+def run_with_timeout(cmd, cwd, env, timeout):
+    """Run one shell command; on timeout kill its whole process group and keep the partial output.
+    Returns (returncode or None, output, timed_out)."""
+    proc = subprocess.Popen(cmd, cwd=cwd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, env=env, start_new_session=True)
+    try:
+        out, err = proc.communicate(timeout=timeout)
+        return proc.returncode, out + err, False
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(proc.pid), 9)
+        except (ProcessLookupError, PermissionError):
+            proc.kill()
+        out, err = proc.communicate()
+        return None, _as_text(out) + _as_text(err), True
+
+
 def cmd_gate(a):
     p = task_paths(a.task)
     wt, base = p["worktree"], p["base"]
-    allow = [g for g in (a.allow or "").split(",") if g]
-    protect = [g for g in (a.protect or "").split(",") if g]
+    allow = [g.strip() for g in (a.allow or "").split(",") if g.strip()]
+    protect = [g.strip() for g in (a.protect or "").split(",") if g.strip()]
+    no_tests = getattr(a, "no_tests", False)
+    if not no_tests and not a.test and not a.hidden_cmd:
+        sys.exit("hx: gate needs --test or --hidden-cmd (or --no-tests to gate without tests)")
+    if not allow:
+        sys.exit("hx: gate needs --allow GLOBS (use --allow '**' to allow every path)")
     reaped = reap_orphans([wt, p["hidden"]])
     if reaped:
         print(f"[hx] gate: stopped {reaped} leftover processes in the worktree before testing")
     files = changed_files(wt, base)
-    out_of_scope = [f for f in files if allow and not match_any(f, allow)]
+    out_of_scope = [f for f in files if not match_any(f, allow)]
     touched_protected = [f for f in files if match_any(f, protect)]
     results = {"changed": files, "out_of_scope": out_of_scope, "protected_touched": touched_protected}
+    if no_tests:
+        results["no_tests"] = True
     env = dict(os.environ, PYTHONPATH=str(wt) + os.pathsep + os.environ.get("PYTHONPATH", ""))
     fails = []
     for f in ("visible_failure.txt", "hidden_failure.txt"):
         (p["state"] / f).unlink(missing_ok=True)
     for label, cmd in (("tests", a.test), ("hidden", a.hidden_cmd)):
-        if not cmd:
+        if no_tests or not cmd:  # --no-tests means no test command runs at all
             continue
         cmd = cmd.replace("{hidden}", shlex.quote(str(p["hidden"]))).replace("{wt}", shlex.quote(str(wt)))
         tries = 1 + (a.retry if label == "tests" else 0)
+        rc, timed_out, attempt, started = None, False, 0, time.time()
         for attempt in range(tries):
-            r = subprocess.run(cmd, cwd=wt, shell=True, capture_output=True, text=True, env=env, timeout=a.gate_timeout)
-            (p["state"] / f"{label}.log").write_text(r.stdout + r.stderr)
-            if r.returncode == 0:
+            started = time.time()
+            rc, out, timed_out = run_with_timeout(cmd, wt, env, a.gate_timeout)
+            (p["state"] / f"{label}.log").write_text(out)
+            if rc == 0 or timed_out:  # a hung command stays hung: never retried
                 break
             if attempt + 1 < tries:
                 print(f"[hx] gate: {label} failed (attempt {attempt + 1}); retrying once (flaky timing tests)")
                 reap_orphans([wt, p["hidden"]])
-        results[label] = "pass" if r.returncode == 0 else "fail"
-        if attempt and r.returncode == 0:
-            results[f"{label}_retried"] = attempt
-        if r.returncode != 0:
-            out = r.stdout + r.stderr
+        failure = p["state"] / ("hidden_failure.txt" if label == "hidden" else "visible_failure.txt")
+        if timed_out:
+            results[label] = "timeout"
+            secs = time.time() - started
+            text = (f"--- {label} ({cmd}) TIMEOUT after {secs:.1f}s (limit {a.gate_timeout}s)\n"
+                    f"{tail(out, 60 if label == 'hidden' else 30)}"
+                    f"\n(full log: {p['state'] / (label + '.log')})")
+            fails.append(text)
+            failure.write_text(text)
+        elif rc == 0:
+            results[label] = "pass"
+            if attempt:
+                results[f"{label}_retried"] = attempt
+        else:
+            results[label] = "fail"
             # TAP runners (node --test, prove, ...): list the failing test names first; TODO/SKIP lines are not failures.
             failing = [l for l in out.splitlines() if l.startswith("not ok") and "# TODO" not in l and "# SKIP" not in l]
             head = ("failing tests:\n" + "\n".join(failing[:20]) + "\n") if failing else ""
-            text = (f"--- {label} ({cmd}) exit {r.returncode}\n{head}{tail(out, 60 if label == 'hidden' else 30)}"
+            text = (f"--- {label} ({cmd}) exit {rc}\n{head}{tail(out, 60 if label == 'hidden' else 30)}"
                     f"\n(full log: {p['state'] / (label + '.log')})")
             fails.append(text)
-            (p["state"] / ("hidden_failure.txt" if label == "hidden" else "visible_failure.txt")).write_text(text)
+            failure.write_text(text)
     ok = not out_of_scope and not touched_protected and not fails
     results["gate"] = "PASS" if ok else "FAIL"
-    (p["state"] / "last_gate.json").write_text(json.dumps({"gate": results["gate"], "fingerprint": tree_fingerprint(wt, base)}))
+    gate_json = {"gate": results["gate"], "fingerprint": tree_fingerprint(wt, base)}
+    if no_tests:  # the result JSON records that the gate ran without any test command
+        gate_json["no_tests"] = True
+    (p["state"] / "last_gate.json").write_text(json.dumps(gate_json))
     metric({"task": a.task, "event": "gate", **{k: v for k, v in results.items() if k != "changed"}, "n_changed": len(files)})
     print(json.dumps(results, ensure_ascii=False))
     (p["state"] / "last_gate.txt").write_text(json.dumps(results, ensure_ascii=False, indent=1) + ("\n\n" + "\n".join(fails) if fails else ""))
@@ -544,13 +808,15 @@ def cmd_report(a):
         elif r["event"] == "gate":
             t["gates"] += 1; t["gate_fail"] += r["gate"] == "FAIL"
         elif r["event"] == "triage":
-            t.setdefault("triage", [0, 0]); t["triage"][0] += r.get("code_errors", 0); t["triage"][1] += r.get("test_errors", 0)
+            t.setdefault("triage", [0, 0, 0])
+            t["triage"][0] += r.get("code_errors", 0); t["triage"][1] += r.get("test_errors", 0)
+            t["triage"][2] += r.get("unclear", 0)
         elif r["event"] == "note":
             t["notes"].update({k: v for k, v in r.items() if k not in ("task", "event", "ts")})
     print(f"{'task':20} {'calls':32} {'gates':>5} {'fail':>4} {'go$':>7}  notes")
     for name, t in tasks.items():
         calls = " ".join(f"{k}:{v}" for k, v in t["calls"].items())
-        tri = f" triage(code/test)={t['triage'][0]}/{t['triage'][1]}" if "triage" in t else ""
+        tri = f" triage(code/test/unclear)={t['triage'][0]}/{t['triage'][1]}/{t['triage'][2]}" if "triage" in t else ""
         print(f"{name:20} {calls:32} {t['gates']:>5} {t['gate_fail']:>4} {t['cost']:>7.3f}  {t['notes']}{tri}")
 
 
@@ -568,9 +834,11 @@ def main():
     s.add_argument("--feedback"); s.add_argument("--model"); s.add_argument("--read-only", action="store_true")
     s.add_argument("--max-chars", type=int, default=CFG["max_chars"]); s.add_argument("--timeout", type=int, help="seconds (default: role or config timeout_s)")
     s.add_argument("--resume", action="store_true", help="continue this role's last session for the task (after TIMEOUT/STALLED)")
+    s.add_argument("--force-retry", action="store_true", help="call even when the phase's retry budget is used up (recorded as forced)")
     s.set_defaults(fn=cmd_call)
     s = sp.add_parser("gate"); s.add_argument("task"); s.add_argument("--test"); s.add_argument("--hidden-cmd")
     s.add_argument("--allow"); s.add_argument("--protect")
+    s.add_argument("--no-tests", action="store_true", help="gate without running any test command (recorded as no_tests in the result)")
     s.add_argument("--retry", type=int, default=CFG.get("gate_retry", 1), help="re-run the visible test command this many times on failure")
     s.add_argument("--gate-timeout", type=int, default=CFG.get("gate_timeout_s", 1800)); s.set_defaults(fn=cmd_gate)
     s = sp.add_parser("diff"); s.add_argument("task"); s.add_argument("--all", action="store_true", help="whole task, all phases"); s.set_defaults(fn=cmd_diff)
