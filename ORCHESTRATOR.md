@@ -36,6 +36,8 @@ Go modellerine giden şablonlar İngilizce (araştırma + lab v5); raporları T�
    ile yeniden çağır.
 4. Kapı: `hx gate <iş> --allow "<kapsam glob'ları>" --protect "<DOKUNMA glob'ları>" --test "<test komutu>"
    --hidden-cmd "<spec'teki gizli test komutu>"`. Worker'ın "testler geçti" beyanı kanıt değildir.
+   `--allow` ve en az bir test komutu zorunludur (bilerek testsiz kapı: `--no-tests`; her şeye izin: `--allow '**'`).
+   Glob: `*` ve `?` "/" geçmez, `**` sıfır veya daha çok dizin (`src/*` alt dizinleri KAPSAMAZ, `src/**` kapsar).
    Test çıktısını dosyaya yönlendirme: kapı tam çıktıyı `<state>/tests.log` ve `<state>/hidden.log`'a kendisi yazar.
    Kapı başlamadan worktree'de kalmış süreçleri durdurur; görünür testler düşerse bir kez yeniden dener (`--retry`).
    Yalnız süre ölçen testler düşüyorsa makine yükünü kontrol et (`uptime`); tek başına koşturup main ile karşılaştır.
@@ -48,7 +50,8 @@ Go modellerine giden şablonlar İngilizce (araştırma + lab v5); raporları T�
    - Çağrı TIMEOUT veya STALLED ile bittiyse raporu eksik olabilir: önce kapıyı koştur; geçmiyorsa sıfırdan çağırma,
      aynı oturumu sürdür: `hx call worker <iş> <spec> --resume [--feedback <dosya>]` (model bağlamını korur,
      biten işi yeniden yapmaz). Worker süre sınırı 2400 s; 15 dk hiç olay gelmezse STALLED ile kesilir.
-   - En fazla 2 worker tekrarı; sonra `hx call escalate ...` (bir kez). O da geçemezse dur, bana raporla;
+   - En fazla 2 worker tekrarı; sonra `hx call escalate ...` (bir kez). hx bunu faz başına zorlar (`--resume` sayılmaz);
+     bilinçli istisna yalnız `--force-retry` ile (metriğe yazılır). Triage BELIRSIZ satırları test_issues.txt'de ayrı başlıkta. O da geçemezse dur, bana raporla;
      Sonnet'e yazdırmak için onayımı iste.
 6. Kapı PASS: `hx diff <iş>` → diff yolunu al. Diff'i kendin baştan sona okuma.
    Yeni bir Sonnet 5.5 subagent'ını /Users/leventozgur/Desktop/Projects/quadrant-harness/templates/reviewer.md metniyle başlat; {SPEC_PATH},
