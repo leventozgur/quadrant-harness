@@ -186,10 +186,52 @@ def cmd_prices(a):
 _lock = threading.Lock()
 
 
+def is_opencode(args):
+    """True when the executable name (basename of argv[0]) starts with "opencode": `opencode`,
+    `opencode-pty`, `/opt/homebrew/.../bin/opencode`."""
+    argv = args.split(None, 1)
+    return bool(argv) and os.path.basename(argv[0]).startswith("opencode")
+
+
+def reap_targets(rows, keys, protect=()):
+    """Pick the pids to signal from (pid, ppid, args) rows — pure, so the decision is testable.
+
+    A process is a target only when BOTH hold: its command line contains one of `keys` (substring, as before) and
+    it runs under OpenCode (itself or an ancestor up the ppid chain is an OpenCode process). Every descendant of a
+    target is a target too (npm test -> node --test -> workers). `protect` (hx and its ancestors) is never killed.
+    A user's shell, editor, `tail -f` or probe script that merely names the path has no OpenCode ancestor, so it is
+    left alone."""
+    keys = [str(k) for k in keys]
+    protect = set(protect)
+    parent = {pid: ppid for pid, ppid, _ in rows}
+    args_of = {pid: args for pid, _, args in rows}
+
+    def under_opencode(pid):
+        seen, cur = set(), pid
+        while cur and cur not in seen:
+            if is_opencode(args_of.get(cur, "")):
+                return True
+            seen.add(cur)
+            cur = parent.get(cur)
+        return False
+
+    hit = {pid for pid, _, args in rows
+           if pid not in protect and any(k in args for k in keys) and under_opencode(pid)}
+    # include descendants of matched shells (npm test -> node --test -> workers)
+    changed = True
+    while changed:
+        changed = False
+        for pid, ppid, _ in rows:
+            if ppid in hit and pid not in hit and pid not in protect:
+                hit.add(pid); changed = True
+    return hit
+
+
 def reap_orphans(paths, grace=3.0):
     """OpenCode runs shell commands through its long-lived pty daemon; they can keep running (or start late)
-    after `opencode run` returns and then race the gate or edit the worktree. Kill every process whose command
-    line names the task's worktree or hidden dir, children first. Returns how many were signalled."""
+    after `opencode run` returns and then race the gate or edit the worktree. Kill every process that names the
+    task's worktree or hidden dir AND runs under OpenCode (see reap_targets), children first: the user's own
+    processes are not touched. Returns how many were signalled."""
     me = os.getpid()
     keys = [str(x) for x in paths]
     def scan():
@@ -205,14 +247,7 @@ def reap_orphans(paths, grace=3.0):
     protect, cur = set(), me
     while cur and cur not in protect:  # never signal hx itself or the shell that started it
         protect.add(cur); cur = parent.get(cur)
-    hit = {pid for pid, _, args in rows if pid not in protect and any(k in args for k in keys)}
-    # include descendants of matched shells (npm test -> node --test -> workers)
-    changed = True
-    while changed:
-        changed = False
-        for pid, ppid, _ in rows:
-            if ppid in hit and pid not in hit and pid not in protect:
-                hit.add(pid); changed = True
+    hit = reap_targets(rows, keys, protect)
     for sig in (15, 9):
         for pid in sorted(hit, reverse=True):
             try: os.kill(pid, sig)
