@@ -63,3 +63,40 @@ Prompt şablonu metinleri Opus tarafından yazılır (kod değil).
 
 ## Sonuçlar
 (her deney bitince eklenir)
+
+### HX-13 — KILL (2026-11-17)
+- Geliştirme: hx ile. DeepSeek worker 324 s / ≈$0.03; Qwen testçi 576 s / ≈$0.13. Kapı ilk turda PASS.
+  Kör denetime gerek kalmadı, çünkü ölçüm KILL dedi.
+- Duyarlılık 9/13 = %69 (eşik ≥%50, geçti). BA-32 2/4, BA-32b 4/4 (await yok → `"undefined" is not valid JSON`), BA-43b 3/5.
+- Yanlış şüphe 26/194 = %13.4 (eşik ≤%5, **geçmedi**). Tester lab'da h01 ve h05 mutantları.
+- Neden: hata düzeltme görevlerinde mutant (veya düzeltmeyi yapmayan worker) base davranışına döner, test base'deki gibi birebir düşer.
+  "Değişiklik olmadan da aynı düşüyor" sinyali "test bozuk" ile "düzeltme yapılmamış"ı ayıramıyor.
+- Sapma: BA-36'nın ref'i yok (iş reddedilmişti, dal silinmiş), ölçümden çıkarıldı.
+- Not: BA-32b'nin 4 yanlış testinin hepsi assertion dışı bir çökme (`SyntaxError` / JSON). Yalnız assertion dışı hataları işaretleyen bir varyant daha isabetli olabilir.
+  Bu yeni bir hipotezdir; yeni ön kayıt gerekir ve eşik bu veriye göre ayarlanmaz.
+- Harness bulgusu: hx kendi deposunda geliştirilirken worker'ın geçici e2e depolarındaki `/.git/hx/` yolları "touched the hidden-test directory" yanlış alarmı üretti.
+- Diff: `.git/hx/HX-13/KILLED-HX-13.diff`. Dal `exp/HX-13` silindi.
+
+### HX-14 — KILL (2026-11-17)
+- Geliştirme: hx ile yapıldı.
+  - DeepSeek worker 3 tur, toplam ≈1045 s. Qwen testçi 392 s. GLM hakem 42 s.
+  - Kapı tur 1-3'te FAIL çıktı, ardından GLM #high eskalasyonu (120 s) geldi, eskalasyon sonrası kapı PASS.
+  - PM 6 gizli testi düzeltti, her biri dosyada "PM fix" notuyla işaretli.
+  - Ölçüm KILL dediği için kör denetim yapılmadı.
+- Ölçüm: Qwen3.7 Plus #high, 3 görev × 2 kol × 3 tekrar, eşzamanlı koşuldu.
+  - B kolunun sözleşmeleri, ref'i görmemiş bir Sonnet ajanına `hx map` çıktısından kör olarak yazdırıldı. PM kendi sözleşmelerini geri görüş yanlılığı nedeniyle kullanmadı.
+
+  | Kol | Takım | Ort. test | Ort. ref'te düşen | Ort. base'de düşen |
+  |---|---|---|---|---|
+  | A | 8 (A-BA-32-r2 boş takım bıraktı) | 18.5 | 2.62 | 13.0 |
+  | B | 9 | 29.7 | **2.89** | 19.9 |
+
+  - Eşik: B'nin ref'te düşen ortalaması ≤ 1.31 (A'nın %50'si). **Geçmedi.**
+  - Base gücü eşiği (≥ %80) geçti: B %153. Koruma (tester lab) da geçti: hx14B'de ref 7/7, öldürme 26/28.
+- Neden: sözleşme yanlış import ve imza sınıfını azaltıyor, ama ref'teki yanlış testlerin çoğu başka sınıflardan.
+  - Eksik `await` (B-BA-32b-r1'de 7 test `"undefined" is not valid JSON`).
+  - Spec'te olmayan metin beklentileri (BA-43b).
+  - Zaman aşımında yarım kalan takım (B-BA-43b-r1 timeout, tek test).
+- Yan bulgu: sözleşmeli spec testçiyi belirgin biçimde daha çok ve daha güçlü test yazmaya itiyor (+%60 test, +%53 base gücü). Kalite hedefi olan yanlış test oranı ise düşmedi.
+- Diff `.git/hx/HX-14/KILLED-HX-14.diff`, ölçüm `.git/hx/HX-14/measure-eval.json` ve `measure-suites/` içinde.
+  Dal `exp/HX-14` silindi; BrainAtlas'taki `hxexp/HX14*` worktree ve dalları temizlendi.

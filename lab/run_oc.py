@@ -80,7 +80,7 @@ def run_one(label, model, run_id, tier, test_id, effort):
         t0 = time.time()
         try:
             suffix = SUFFIX[effort] if effort is not None or not EFFORT_OVERRIDE else EFFORT_OVERRIDE
-            p = subprocess.run(["opencode", "run", "-m", model + suffix, "--format", "json", prompt],
+            p = subprocess.run(["opencode", "run", "-m", model + suffix, "--format", "json", *os.environ.get("LAB_OC_EXTRA", "").split(), prompt],
                                cwd=d, env=env, capture_output=True, text=True, timeout=1200)
             raw, err = p.stdout, p.stderr
         except subprocess.TimeoutExpired as e:

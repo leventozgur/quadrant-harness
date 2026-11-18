@@ -6,9 +6,9 @@ token miktarını en aza indir. Tek Claude worker'ı denetçi Sonnet 5.5'tir.
 Araç: `python3 /Users/leventozgur/Desktop/Projects/quadrant-harness/hx.py` (aşağıda `hx`). Komutları proje deposunun kökünden çalıştır.
 Roller ve modeller /Users/leventozgur/Desktop/Projects/quadrant-harness/config.json içinde:
 - worker   = opencode-go/deepseek-v4.1-flash       (kodu yazar; varsayılan effort = high)
-- tester   = opencode-go/claude-haiku-5-5          (gizli kabul testlerini yazar; worker'dan farklı model ailesi;
-             2026-11-16 lab v6 ile Qwen'den geçildi. Yedek: `hx call tester --model 'opencode-go/qwen3.7-plus#high'`.
-             Sonraki 2–3 gerçek işte TEST_HATASI sayısı izlenir; Qwen'den kötüyse yedeğe dönülür)
+- tester   = opencode-go/qwen3.7-plus#high         (gizli kabul testlerini yazar; worker'dan farklı model ailesi;
+             2026-11-16 gerçek CodartERP P1–P6'da Haiku 5.5 ≈6,3 TEST_HATASI/iş verdiği için Qwen'e dönüldü (9bfc6d1).
+             Yedek: `hx call tester --model opencode-go/claude-haiku-5-5`. Her işte TEST_HATASI sayısını izle; Qwen tabanı ≈2/iş)
 - judge    = opencode-go/glm-5.3-flash#low         (düşen gizli testi sınıflar: test mi kod mu hatalı)
 - escalate = opencode-go/glm-5.3-flash#high        (worker iki kez kapıdan geçemezse ikinci görüş)
 - denetçi  = Sonnet 5.5 subagent                   (salt okur, kör denetim)

@@ -1,0 +1,79 @@
+[
+ {
+  "run": "h01_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 9,
+  "seconds": 26.9,
+  "tokens_out": 2862,
+  "tokens_in": 19781,
+  "ref_detail": ""
+ },
+ {
+  "run": "h02_r1",
+  "ref_pass": true,
+  "killed": 3,
+  "mutants": 4,
+  "n_tests": 3,
+  "seconds": 56.3,
+  "tokens_out": 3927,
+  "tokens_in": 68429,
+  "ref_detail": ""
+ },
+ {
+  "run": "h03_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 10,
+  "seconds": 32.0,
+  "tokens_out": 3271,
+  "tokens_in": 30772,
+  "ref_detail": ""
+ },
+ {
+  "run": "h04_r1",
+  "ref_pass": false,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 10,
+  "seconds": 36.3,
+  "tokens_out": 3617,
+  "tokens_in": 19595,
+  "ref_detail": "/tester/luna6/h04_r1/hidden/test_normalize_phone_hidden.py\", line 69, in test_invalid_extension_returns_none\n    self.assertIsNone(normalize_phone(\"5321234567 dahili 0\"))\n    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: '+90 532 123 45 67 #0' is not None\n\n----------------------------------------------------------------------\nRan 10 tests in 0.000s\n\nFAILED (failures=1)\n"
+ },
+ {
+  "run": "h05_r1",
+  "ref_pass": true,
+  "killed": 3,
+  "mutants": 4,
+  "n_tests": 5,
+  "seconds": 35.3,
+  "tokens_out": 3263,
+  "tokens_in": 31533,
+  "ref_detail": ""
+ },
+ {
+  "run": "h06_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 7,
+  "seconds": 48.2,
+  "tokens_out": 4526,
+  "tokens_in": 31967,
+  "ref_detail": ""
+ },
+ {
+  "run": "h07_r1",
+  "ref_pass": true,
+  "killed": 4,
+  "mutants": 4,
+  "n_tests": 12,
+  "seconds": 22.9,
+  "tokens_out": 2121,
+  "tokens_in": 29929,
+  "ref_detail": ""
+ }
+]

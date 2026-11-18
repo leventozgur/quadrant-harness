@@ -1,0 +1,8 @@
+luna6 h01_r1: {'seconds': 26.9, 'output_tokens': 1315, 'reasoning_tokens': 1547, 'input_tokens': 9, 'cache_read': 19772, 'steps': 3, 'tool_calls': 6, 'errors': 0, 'timeout': False, 'model': 'opencode-go/gpt-6-luna', 'wall_seconds': 29.6}
+luna6 h02_r1: {'seconds': 56.3, 'output_tokens': 1497, 'reasoning_tokens': 2430, 'input_tokens': 21, 'cache_read': 68408, 'steps': 7, 'tool_calls': 9, 'errors': 0, 'timeout': False, 'model': 'opencode-go/gpt-6-luna', 'wall_seconds': 57.8}
+luna6 h03_r1: {'seconds': 32.0, 'output_tokens': 1519, 'reasoning_tokens': 1752, 'input_tokens': 12, 'cache_read': 30760, 'steps': 4, 'tool_calls': 4, 'errors': 0, 'timeout': False, 'model': 'opencode-go/gpt-6-luna', 'wall_seconds': 33.9}
+luna6 h04_r1: {'seconds': 36.3, 'output_tokens': 1486, 'reasoning_tokens': 2131, 'input_tokens': 9, 'cache_read': 19586, 'steps': 3, 'tool_calls': 4, 'errors': 0, 'timeout': False, 'model': 'opencode-go/gpt-6-luna', 'wall_seconds': 38.1}
+luna6 h05_r1: {'seconds': 35.3, 'output_tokens': 1610, 'reasoning_tokens': 1653, 'input_tokens': 12, 'cache_read': 31521, 'steps': 4, 'tool_calls': 5, 'errors': 0, 'timeout': False, 'model': 'opencode-go/gpt-6-luna', 'wall_seconds': 37.3}
+luna6 h06_r1: {'seconds': 48.2, 'output_tokens': 1827, 'reasoning_tokens': 2699, 'input_tokens': 12, 'cache_read': 31955, 'steps': 4, 'tool_calls': 4, 'errors': 0, 'timeout': False, 'model': 'opencode-go/gpt-6-luna', 'wall_seconds': 50.0}
+luna6 h07_r1: {'seconds': 22.9, 'output_tokens': 1117, 'reasoning_tokens': 1004, 'input_tokens': 12, 'cache_read': 29917, 'steps': 4, 'tool_calls': 3, 'errors': 0, 'timeout': False, 'model': 'opencode-go/gpt-6-luna', 'wall_seconds': 24.4}
+DONE
