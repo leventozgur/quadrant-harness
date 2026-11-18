@@ -82,7 +82,7 @@ class StripHiddenSectionTest(unittest.TestCase):
 
 class MatchAnyTest(unittest.TestCase):
     def test_matches_a_file_against_globs(self):
-        self.assertTrue(hx.match_any("src/a.py", ["*.py"]))
+        self.assertTrue(hx.match_any("src/a.py", ["src/*.py"]))
         self.assertTrue(hx.match_any("tests/test_a.py", ["tests/*.py"]))
 
     def test_no_match_returns_false(self):

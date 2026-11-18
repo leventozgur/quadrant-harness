@@ -8,7 +8,7 @@
   hx.py pair   <task> <spec.md>                    tester and worker in parallel (independent inputs)
   hx.py triage <task> <spec.md>                    judge model classifies failing hidden tests; writes
                                                    worker_feedback.txt (rules only, no test code)
-  hx.py gate   <task> --test CMD [--hidden-cmd CMD] [--allow GLOBS] [--protect GLOBS]
+  hx.py gate   <task> --test CMD [--hidden-cmd CMD] --allow GLOBS [--protect GLOBS] [--no-tests]
   hx.py diff   <task> [--all]                      write the diff for the reviewer (current phase; --all = whole task)
   hx.py commit <task> -m MSG --review ONAY [--phase N] [--next TEXT]
                                                    commit an approved phase in the worktree; next phase diffs from here;
@@ -20,7 +20,7 @@
 
 State lives in <git-common-dir>/hx (inside .git, never in a diff). Roles and models: config.json.
 """
-import argparse, fnmatch, json, os, re, shlex, subprocess, sys, threading, time
+import argparse, json, os, re, shlex, subprocess, sys, threading, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -478,14 +478,87 @@ def cmd_triage(a):
 
 
 # ------------------------------------------------------------------ gate
+def _nul_split(raw):
+    """Split NUL-separated git output; a path with spaces stays one entry."""
+    return [x for x in raw.split("\0") if x]
+
+
 def changed_files(wt, base):
-    tracked = sh(["git", "diff", "--name-only", base], cwd=wt).stdout.split()
-    untracked = sh(["git", "ls-files", "--others", "--exclude-standard"], cwd=wt).stdout.split()
+    tracked = _nul_split(sh(["git", "diff", "--name-only", "-z", base], cwd=wt).stdout)
+    untracked = _nul_split(sh(["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=wt).stdout)
     return sorted(set(tracked + untracked))
 
 
+def _glob_segment(seg):
+    """Regex for one path segment: `*`/`?`/character classes never cross a "/"."""
+    out, i = [], 0
+    while i < len(seg):
+        c = seg[i]
+        i += 1
+        if c == "*":
+            out.append("[^/]*")
+        elif c == "?":
+            out.append("[^/]")
+        elif c == "[":
+            j = i
+            if j < len(seg) and seg[j] == "!":  # fnmatch: only "!" negates a class, "^" is literal
+                j += 1
+            if j < len(seg) and seg[j] == "]":
+                j += 1
+            while j < len(seg) and seg[j] != "]":
+                j += 1
+            if j >= len(seg):  # unterminated class: a literal "["
+                out.append(r"\[")
+                continue
+            stuff, i = seg[i:j], j + 1
+            if stuff == "":  # empty class: literal "["
+                out.append(r"\[")
+                continue
+            cls = stuff.replace("\\", "\\\\").replace("[", r"\[").replace("]", r"\]")
+            if stuff.startswith("!"):  # fnmatch: only "!" negates a class
+                cls = "^" + cls[1:]
+            elif stuff.startswith("^"):  # "^" is a literal character inside the class
+                cls = "\\" + cls
+            out.append("(?!/)[" + cls + "]")
+        else:
+            out.append(re.escape(c))
+    return "".join(out)
+
+
+def _glob_regex(pattern):
+    """Full-path regex. A `**` that is a whole segment matches zero or more directory segments."""
+    parts = pattern.split("/")
+    out, need_sep, i = [], False, 0
+    while i < len(parts):
+        part = parts[i]
+        if part == "**":
+            last = i == len(parts) - 1
+            if last:
+                # a trailing `**` covers what is UNDER the prefix: "src/**" is "src/<something>",
+                # while a bare "**" is every path.
+                out.append("(?:/[^/]+)+" if need_sep else "[^/]+(?:/[^/]+)*")
+                need_sep = False
+            else:
+                if need_sep:
+                    out.append("/")
+                out.append("(?:[^/]+/)*")
+                need_sep = False
+        else:
+            if need_sep:
+                out.append("/")
+            out.append(_glob_segment(part))
+            need_sep = True
+        i += 1
+    return "".join(out)
+
+
+def glob_match(path, pattern):
+    """Whole-path match of a repo-relative, "/"-separated path against one glob pattern."""
+    return re.fullmatch(_glob_regex(pattern), path) is not None
+
+
 def match_any(path, globs):
-    return any(fnmatch.fnmatch(path, g) for g in globs)
+    return any(glob_match(path, g) for g in globs)
 
 
 def tail(s, n=30):
@@ -493,50 +566,95 @@ def tail(s, n=30):
     return "\n".join(lines[-n:])
 
 
+def _as_text(v):
+    if not v:
+        return ""
+    return v.decode(errors="replace") if isinstance(v, bytes) else v
+
+
+def run_with_timeout(cmd, cwd, env, timeout):
+    """Run one shell command; on timeout kill its whole process group and keep the partial output.
+    Returns (returncode or None, output, timed_out)."""
+    proc = subprocess.Popen(cmd, cwd=cwd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, env=env, start_new_session=True)
+    try:
+        out, err = proc.communicate(timeout=timeout)
+        return proc.returncode, out + err, False
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(proc.pid), 9)
+        except (ProcessLookupError, PermissionError):
+            proc.kill()
+        out, err = proc.communicate()
+        return None, _as_text(out) + _as_text(err), True
+
+
 def cmd_gate(a):
     p = task_paths(a.task)
     wt, base = p["worktree"], p["base"]
-    allow = [g for g in (a.allow or "").split(",") if g]
-    protect = [g for g in (a.protect or "").split(",") if g]
+    allow = [g.strip() for g in (a.allow or "").split(",") if g.strip()]
+    protect = [g.strip() for g in (a.protect or "").split(",") if g.strip()]
+    no_tests = getattr(a, "no_tests", False)
+    if not no_tests and not a.test and not a.hidden_cmd:
+        sys.exit("hx: gate needs --test or --hidden-cmd (or --no-tests to gate without tests)")
+    if not allow:
+        sys.exit("hx: gate needs --allow GLOBS (use --allow '**' to allow every path)")
     reaped = reap_orphans([wt, p["hidden"]])
     if reaped:
         print(f"[hx] gate: stopped {reaped} leftover processes in the worktree before testing")
     files = changed_files(wt, base)
-    out_of_scope = [f for f in files if allow and not match_any(f, allow)]
+    out_of_scope = [f for f in files if not match_any(f, allow)]
     touched_protected = [f for f in files if match_any(f, protect)]
     results = {"changed": files, "out_of_scope": out_of_scope, "protected_touched": touched_protected}
+    if no_tests:
+        results["no_tests"] = True
     env = dict(os.environ, PYTHONPATH=str(wt) + os.pathsep + os.environ.get("PYTHONPATH", ""))
     fails = []
     for f in ("visible_failure.txt", "hidden_failure.txt"):
         (p["state"] / f).unlink(missing_ok=True)
     for label, cmd in (("tests", a.test), ("hidden", a.hidden_cmd)):
-        if not cmd:
+        if no_tests or not cmd:  # --no-tests means no test command runs at all
             continue
         cmd = cmd.replace("{hidden}", shlex.quote(str(p["hidden"]))).replace("{wt}", shlex.quote(str(wt)))
         tries = 1 + (a.retry if label == "tests" else 0)
+        rc, timed_out, attempt, started = None, False, 0, time.time()
         for attempt in range(tries):
-            r = subprocess.run(cmd, cwd=wt, shell=True, capture_output=True, text=True, env=env, timeout=a.gate_timeout)
-            (p["state"] / f"{label}.log").write_text(r.stdout + r.stderr)
-            if r.returncode == 0:
+            started = time.time()
+            rc, out, timed_out = run_with_timeout(cmd, wt, env, a.gate_timeout)
+            (p["state"] / f"{label}.log").write_text(out)
+            if rc == 0 or timed_out:  # a hung command stays hung: never retried
                 break
             if attempt + 1 < tries:
                 print(f"[hx] gate: {label} failed (attempt {attempt + 1}); retrying once (flaky timing tests)")
                 reap_orphans([wt, p["hidden"]])
-        results[label] = "pass" if r.returncode == 0 else "fail"
-        if attempt and r.returncode == 0:
-            results[f"{label}_retried"] = attempt
-        if r.returncode != 0:
-            out = r.stdout + r.stderr
+        failure = p["state"] / ("hidden_failure.txt" if label == "hidden" else "visible_failure.txt")
+        if timed_out:
+            results[label] = "timeout"
+            secs = time.time() - started
+            text = (f"--- {label} ({cmd}) TIMEOUT after {secs:.1f}s (limit {a.gate_timeout}s)\n"
+                    f"{tail(out, 60 if label == 'hidden' else 30)}"
+                    f"\n(full log: {p['state'] / (label + '.log')})")
+            fails.append(text)
+            failure.write_text(text)
+        elif rc == 0:
+            results[label] = "pass"
+            if attempt:
+                results[f"{label}_retried"] = attempt
+        else:
+            results[label] = "fail"
             # TAP runners (node --test, prove, ...): list the failing test names first; TODO/SKIP lines are not failures.
             failing = [l for l in out.splitlines() if l.startswith("not ok") and "# TODO" not in l and "# SKIP" not in l]
             head = ("failing tests:\n" + "\n".join(failing[:20]) + "\n") if failing else ""
-            text = (f"--- {label} ({cmd}) exit {r.returncode}\n{head}{tail(out, 60 if label == 'hidden' else 30)}"
+            text = (f"--- {label} ({cmd}) exit {rc}\n{head}{tail(out, 60 if label == 'hidden' else 30)}"
                     f"\n(full log: {p['state'] / (label + '.log')})")
             fails.append(text)
-            (p["state"] / ("hidden_failure.txt" if label == "hidden" else "visible_failure.txt")).write_text(text)
+            failure.write_text(text)
     ok = not out_of_scope and not touched_protected and not fails
     results["gate"] = "PASS" if ok else "FAIL"
-    (p["state"] / "last_gate.json").write_text(json.dumps({"gate": results["gate"], "fingerprint": tree_fingerprint(wt, base)}))
+    gate_json = {"gate": results["gate"], "fingerprint": tree_fingerprint(wt, base)}
+    if no_tests:  # the result JSON records that the gate ran without any test command
+        gate_json["no_tests"] = True
+    (p["state"] / "last_gate.json").write_text(json.dumps(gate_json))
     metric({"task": a.task, "event": "gate", **{k: v for k, v in results.items() if k != "changed"}, "n_changed": len(files)})
     print(json.dumps(results, ensure_ascii=False))
     (p["state"] / "last_gate.txt").write_text(json.dumps(results, ensure_ascii=False, indent=1) + ("\n\n" + "\n".join(fails) if fails else ""))
@@ -659,6 +777,7 @@ def main():
     s.set_defaults(fn=cmd_call)
     s = sp.add_parser("gate"); s.add_argument("task"); s.add_argument("--test"); s.add_argument("--hidden-cmd")
     s.add_argument("--allow"); s.add_argument("--protect")
+    s.add_argument("--no-tests", action="store_true", help="gate without running any test command (recorded as no_tests in the result)")
     s.add_argument("--retry", type=int, default=CFG.get("gate_retry", 1), help="re-run the visible test command this many times on failure")
     s.add_argument("--gate-timeout", type=int, default=CFG.get("gate_timeout_s", 1800)); s.set_defaults(fn=cmd_gate)
     s = sp.add_parser("diff"); s.add_argument("task"); s.add_argument("--all", action="store_true", help="whole task, all phases"); s.set_defaults(fn=cmd_diff)

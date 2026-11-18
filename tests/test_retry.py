@@ -54,6 +54,8 @@ class Base(unittest.TestCase):
         self.addCleanup(self.stack.close)
         # no real 90 s sleeps; patch.dict restores the original config value afterwards
         self.stack.enter_context(mock.patch.dict(hx.CFG, {"rate_limit_wait_s": 0}))
+        # run_streaming polls every 2 s; the fake opencode exits instantly, so skip that idle wait in tests
+        self.stack.enter_context(mock.patch.object(hx.time, "sleep", lambda *_: None))
 
     def new_task(self, task="HX-T2"):
         repo = self.stack.enter_context(temp_repo())

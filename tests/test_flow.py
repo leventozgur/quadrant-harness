@@ -61,6 +61,8 @@ class FlowTest(unittest.TestCase):
     def setUp(self):
         self.stack = contextlib.ExitStack()
         self.addCleanup(self.stack.close)
+        # run_streaming polls every 2 s; the fake opencode exits instantly, so skip that idle wait in tests
+        self.stack.enter_context(mock.patch.object(hx.time, "sleep", lambda *_: None))
 
     # ---------------------------------------------------------------- helpers
     def new_task(self, task="HX-T1"):
@@ -80,8 +82,8 @@ class FlowTest(unittest.TestCase):
         return directory, fake_opencode(directory, lines, **kwargs)
 
     def gate(self, **kwargs):
-        args = dict(task="HX-T1", test=PASS_CMD, hidden_cmd=None, allow=None, protect=None,
-                    retry=0, gate_timeout=120)
+        args = dict(task="HX-T1", test=PASS_CMD, hidden_cmd=None, allow="**", protect=None,
+                    retry=0, gate_timeout=120, no_tests=False)
         args.update(kwargs)
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
