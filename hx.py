@@ -264,6 +264,68 @@ def run_streaming(args, cwd, env, limit, stall_limit):
     return "".join(out), err, timeout, stalled
 
 
+RATE_LIMIT_SIGNALS = ("rate limit", "rate_limit", "usage limit", "too many requests", "429")
+# "429" is a status code, not a digit sequence: a millisecond timestamp (1795004290000) or an id such as
+# "msg_429"/"ses_429" must not fake a signal, while 429, "HTTP 429" and `"statusCode": 429` still count.
+STATUS_429 = re.compile(r"(?<!\w)429(?!\w)")
+
+# Transport metadata whose values may contain "429" by accident (a millisecond timestamp, a session or
+# message id).
+META_KEYS = ("timestamp", "sessionID", "messageID")
+# The envelope of an event object: those names plus the event's own "type". Only the event object carries
+# an envelope; a NESTED "type" such as "rate_limit_error" names the error kind and must stay searchable.
+EVENT_META_KEYS = META_KEYS + ("type",)
+
+
+def strip_meta(obj):
+    """Copy of a TOP-LEVEL event object without its envelope (`EVENT_META_KEYS`), so timestamp/id digits are
+    never searched.
+
+    Only the event object itself has an envelope. Nested objects are payload and are copied unchanged: a
+    nested `"type": "rate_limit_error"` and any nested error message/status ("HTTP 429", `"statusCode": 429`)
+    keep their values, and a nested timestamp or id is not silently dropped either.
+    """
+    if not isinstance(obj, dict):
+        return obj
+    return {k: v for k, v in obj.items() if k not in EVENT_META_KEYS}
+
+
+def error_payload(e):
+    """Searchable text of one `"type": "error"` event: the event object without its top-level envelope, with
+    every nested field kept, serialised back to JSON."""
+    return json.dumps(strip_meta(e), ensure_ascii=False, default=str).lower()
+
+
+def has_signal(text):
+    """True when `text` mentions a rate limit; "429" only counts as a standalone status code."""
+    low = text.lower()
+    if any(s in low for s in RATE_LIMIT_SIGNALS if s != "429"):
+        return True
+    return bool(STATUS_429.search(low))
+
+
+def rate_limited(raw, err):
+    """True when this attempt carries a rate-limit signal: in stderr, or in an error event's payload.
+
+    Model prose ("text" events) and tool input/output never count — a task that merely writes about a rate
+    limiter must not be retried. `raw`/`err` are one attempt's stdout/stderr.
+    """
+    low = err.lower()
+    if has_signal(low):
+        return True
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            e = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(e, dict) and e.get("type") == "error" and has_signal(error_payload(e)):
+            return True
+    return False
+
+
 def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=False, max_chars=None, reap=True, timeout_s=None, resume=False):
     """Run one role; returns (final_text, summary_line). feedback = path or None."""
     role = CFG["roles"].get(role_name)
@@ -296,19 +358,25 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
     args.append(prompt)
     env = dict(os.environ, PWD=str(cwd))
     with _lock:
-        n = len(list(p["state"].glob(f"{role_name}-*.jsonl"))) + 1
+        # only plain "<role>-<n>.jsonl" files count; "<role>-<n>.attempt<k>.jsonl" retries must not shift n
+        n = sum(1 for f in p["state"].glob(f"{role_name}-*.jsonl") if f.stem[len(role_name) + 1:].isdigit()) + 1
         (p["state"] / f"{role_name}-{n}.jsonl").write_text("")  # reserve the number
     t0 = time.time()
     raw, err, timeout = "", "", False
     limit = timeout_s or role.get("timeout_s") or CFG["timeout_s"]
     stall_limit = role.get("stall_s") or CFG.get("stall_s", 900)
     stalled = False
+    attempts = 0
     for attempt in range(4):
         raw, err, timeout, stalled = run_streaming(args, cwd, env, limit, stall_limit)
-        low = (raw + err).lower()
-        if ("usage limit" in low or "rate limit" in low) and attempt < 3:
-            time.sleep(90); continue
-        break
+        attempts = attempt + 1
+        steps_now = parse_events(raw)[2]
+        # retry only a clean-looking rate-limited attempt: no step finished AND a signal in stderr/an error event.
+        # timeouts/stalls are never retried, and the last of the 4 attempts is always final.
+        if timeout or stalled or steps_now or attempt == 3 or not rate_limited(raw, err):
+            break
+        (p["state"] / f"{role_name}-{n}.attempt{attempts}.jsonl").write_text(raw)
+        time.sleep(CFG.get("rate_limit_wait_s", 90))
     (p["state"] / f"{role_name}-{n}.jsonl").write_text(raw)
     reaped = reap_orphans([p["worktree"], p["hidden"]]) if reap else 0
     final, tok, steps, tools, errors, secs, step_toks = parse_events(raw)
@@ -316,7 +384,7 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
     rec = {"task": task, "event": "call", "role": role_name, "n": n, "model": model, "seconds": secs,
            "session": m.group(1) if m else session, "resumed": bool(resume),
            "wall": round(time.time() - t0, 1), "steps": steps, "tool_calls": tools, "errors": errors,
-           "timeout": timeout, "stalled": stalled, "hidden_access": (not sees_hidden) and (str(p["hidden"]) in raw or "/.git/hx/" in raw), "tokens": tok, "go_cost_est": est_cost(model, step_toks), "price_v": 2, "reaped": reaped}
+           "timeout": timeout, "stalled": stalled, "attempts": attempts, "hidden_access": (not sees_hidden) and (str(p["hidden"]) in raw or "/.git/hx/" in raw), "tokens": tok, "go_cost_est": est_cost(model, step_toks), "price_v": 2, "reaped": reaped}
     with _lock:
         metric(rec)
     full = final.strip()
@@ -346,11 +414,25 @@ def cmd_call(a):
     print(out); print("\n" + line)
 
 
+def exit_text(code):
+    """SystemExit.code as a message: a string code is already the message, an int becomes "exit code N"."""
+    if code is None or code == 0:
+        return "exit"
+    return f"exit code {code}" if isinstance(code, int) else str(code)
+
+
 def cmd_pair(a):
     """Tester and worker read the same spec and never each other's output, so they run concurrently."""
-    res = {}
+    res, fails = {}, {}
+
     def go(role):
-        res[role] = run_role(role, a.task, a.spec, max_chars=a.max_chars, reap=False)
+        try:
+            res[role] = run_role(role, a.task, a.spec, max_chars=a.max_chars, reap=False)
+        except SystemExit as e:  # sys.exit inside a thread only ends that thread; record it instead
+            fails[role] = exit_text(e.code)
+        except Exception as e:  # noqa: BLE001 - one failing role must not lose the other role's output
+            fails[role] = f"{type(e).__name__}: {e}"
+
     th = [threading.Thread(target=go, args=(r,)) for r in ("tester", "worker")]
     for t in th: t.start()
     for t in th: t.join()
@@ -359,7 +441,13 @@ def cmd_pair(a):
     if reaped:
         print(f"[hx] pair: stopped {reaped} leftover processes")
     for role in ("tester", "worker"):
-        print(f"===== {role.upper()}\n{res[role][1]}\n{res[role][2]}\n")
+        if role in res:
+            print(f"===== {role.upper()}\n{res[role][1]}\n{res[role][2]}\n")
+    for role in ("tester", "worker"):
+        if role in fails:
+            print(f"[hx] pair: {role} failed: {fails[role]}", file=sys.stderr)
+    if fails:
+        sys.exit(2)
 
 
 def cmd_triage(a):
