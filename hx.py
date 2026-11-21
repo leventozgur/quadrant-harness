@@ -68,7 +68,7 @@ def metric(rec):
 # Names that look like credentials are hidden from model processes and gate commands: the model's shell
 # reads `opencode run`'s environment, so a token in the shell would otherwise reach the model and its prompt.
 _SECRET_HINTS = ("TOKEN", "SECRET", "PASSWORD", "PASSWD", "PASSPHRASE", "API_KEY", "APIKEY",
-                 "PRIVATE_KEY", "CREDENTIAL", "ACCESS_KEY", "AUTH", "COOKIE", "SESSION_KEY")
+                 "PRIVATE_KEY", "CREDENTIAL", "ACCESS_KEY", "AUTHORIZATION", "COOKIE", "SESSION_KEY")
 _SECRET_PREFIXES = ("AWS_", "GITHUB_", "GH_", "AZURE_", "GOOGLE_", "GCP_", "OPENAI_", "ANTHROPIC_",
                     "NPM_", "DOCKER_")
 _ENV_ALWAYS_KEEP = {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "TERM", "PWD"}

@@ -23,7 +23,7 @@ SECRETS = {
     "HX_FAKE_PRIVATE_KEY": "hx-fake-private-key-value",
     "HX_FAKE_CREDENTIAL": "hx-fake-credential-value",
     "HX_FAKE_ACCESS_KEY": "hx-fake-access-key-value",
-    "HX_FAKE_AUTH": "hx-fake-auth-value",
+    "HX_FAKE_AUTHORIZATION": "hx-fake-auth-value",
     "HX_FAKE_COOKIE": "hx-fake-cookie-value",
     "HX_FAKE_SESSION_KEY": "hx-fake-session-key-value",
     "AWS_FAKE_KEY": "hx-fake-aws-value",
@@ -55,6 +55,7 @@ KEPT = {
     "OPENCODE_CONFIG_CONTENT": "hx-fake-opencode-config",
     "OPENCODE_API_KEY": "hx-fake-opencode-key",
     "HX_FAKE_PLAIN": "hx-fake-plain-value",
+    "SSH_AUTH_SOCK": "hx-fake-ssh-sock",  # socket path needed by git over ssh in tests; not a secret value
 }
 
 SPEC_TEXT = """# Görev
