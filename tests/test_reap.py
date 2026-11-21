@@ -4,6 +4,9 @@ reap_targets is pure, so the decision is tested on (pid, ppid, args) rows. The p
 processes this test started itself (a fake `opencode` script plus its `sleep` child); no other process is
 signalled.
 """
+import contextlib
+import io
+import json
 import os
 import shlex
 import shutil
@@ -224,6 +227,87 @@ class InitOrphanTest(unittest.TestCase):
             self.assertIsNotNone(t)
             hx.mark_first_call(p)  # written once
             self.assertEqual(t, hx.first_call_at(p))
+
+
+class ReapRecordTest(unittest.TestCase):
+    """first_call_at persistence and the audit trail of killed processes (metrics / gate JSON)."""
+
+    def setUp(self):
+        from tests import test_retry as tr
+        self.tr = tr
+        self.base = tr.Base("run")  # reuse its helpers; no test method of Base is run
+        self.base.setUp()
+        self.addCleanup(self.base.doCleanups)
+
+    def test_run_role_persists_first_call_at_under_the_task_state_dir(self):
+        repo, p = self.base.new_task()
+        spec = self.base.write_spec(repo)
+        self.assertIsNone(hx.first_call_at(p))
+        _, env = self.base.make_fake([self.tr.step_start(), self.tr.text_event("ok"), self.tr.step_finish()])
+        before = time.time()
+        with mock.patch.dict(os.environ, env):
+            hx.run_role("worker", "HX-T2", str(spec), reap=False)
+        marker = p["state"] / "first_call_at"
+        self.assertTrue(marker.exists())
+        self.assertIn(".git/hx/HX-T2/", str(marker).replace(os.sep, "/").replace("/private", ""))
+        t1 = hx.first_call_at(p)
+        self.assertGreaterEqual(t1, before - 1)
+        with mock.patch.dict(os.environ, env):
+            hx.run_role("worker", "HX-T2", str(spec), reap=False)
+        self.assertEqual(t1, hx.first_call_at(p))  # survives the next call (and, being a file, a reboot)
+
+    def test_unreadable_marker_means_no_init_orphan_rule(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = {"state": Path(d)}
+            (p["state"] / "first_call_at").write_text("garbage")
+            self.assertIsNone(hx.first_call_at(p))
+            self.assertEqual(set(), hx.init_orphans([(5, 1, f"sleep {WT}")], [WT], hx.first_call_at(p)))
+
+    def test_gate_without_marker_passes_since_none(self):
+        repo, p = self.base.new_task()
+        seen = {}
+
+        def fake_reap(paths, grace=3.0, since=None, report=None):
+            seen["since"] = since
+            return 0
+        args = SimpleNamespace(task="HX-T2", test='python3 -c "pass"', hidden_cmd=None, allow="**", protect=None,
+                               retry=0, gate_timeout=60, no_tests=False)
+        with mock.patch.object(hx, "reap_orphans", fake_reap), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                hx.cmd_gate(args)
+        self.assertIsNone(seen["since"])
+
+    def test_reaped_processes_are_written_to_gate_json_and_call_metrics(self):
+        repo, p = self.base.new_task()
+        spec = self.base.write_spec(repo)
+        fake_proc = {"pid": 4242, "cmd": "node --test tests/x.test.mjs"}
+
+        def fake_reap(paths, grace=3.0, since=None, report=None):
+            if report is not None:
+                report.append(fake_proc)
+            return 1
+        args = SimpleNamespace(task="HX-T2", test='python3 -c "pass"', hidden_cmd=None, allow="**", protect=None,
+                               retry=0, gate_timeout=60, no_tests=False)
+        with mock.patch.object(hx, "reap_orphans", fake_reap), contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                hx.cmd_gate(args)
+            gate = json.loads((p["state"] / "last_gate.txt").read_text().split("\n\n")[0])
+            _, env = self.base.make_fake([self.tr.step_start(), self.tr.text_event("ok"), self.tr.step_finish()])
+            with mock.patch.dict(os.environ, env):
+                hx.run_role("worker", "HX-T2", str(spec))
+        self.assertEqual([fake_proc], gate["reaped_procs"])
+        call = self.base.call_metrics(repo)[-1]
+        self.assertEqual([fake_proc], call["reaped_procs"])
+        self.assertEqual(1, call["reaped"])
+
+    def test_describe_proc_masks_secrets_and_truncates(self):
+        d = hx.describe_proc(7, "node srv.js --token abc123 --api_key=zzz PASSWORD=p4ss " + "x" * 300)
+        self.assertEqual(7, d["pid"])
+        self.assertNotIn("abc123", d["cmd"])
+        self.assertNotIn("zzz", d["cmd"])
+        self.assertNotIn("p4ss", d["cmd"])
+        self.assertLessEqual(len(d["cmd"]), 200)
+        self.assertIn("--token ***", d["cmd"])
 
 
 def alive(pid):
