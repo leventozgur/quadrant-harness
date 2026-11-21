@@ -138,6 +138,11 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(("RED", ["impl.py:1 — sorun"]), hx.parse_review_verdict("ONAY\nimpl.py:1 — sorun\n"))
         self.assertEqual(("ONAY", []), hx.parse_review_verdict("\n**ONAY**\n"))
         self.assertEqual(("RED", []), hx.parse_review_verdict("RED\n"))
+        # markdown bold, trailing space/period/newlines and lowercase are all the single-line ONAY
+        for text in ("**ONAY**", "ONAY ", "ONAY\n\n", " onay.", "`ONAY`", "> ONAY\n", "# ONAY"):
+            self.assertEqual(("ONAY", []), hx.parse_review_verdict(text), repr(text))
+        for text in ("ONAY\n\nbir bulgu", "ONAYLANDI", "ONAY değil", "", "\n  \n"):
+            self.assertEqual("RED", hx.parse_review_verdict(text)[0], repr(text))
 
     def test_commit_refuses_without_a_recorded_review(self):
         _, p = self.new_task()
