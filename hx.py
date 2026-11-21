@@ -555,6 +555,84 @@ def rate_limited(raw, err):
     return False
 
 
+_PATH_KEYS = {"path", "filepath", "file_path", "pattern", "glob", "directory", "dir", "cwd", "workdir", "include",
+              "file", "files", "paths"}
+_GLOB_MAGIC = re.compile(r"[*?\[{].*$")
+
+
+def tool_inputs(raw):
+    """(tool name, input dict) of every tool_use event in an OpenCode JSON event stream."""
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            e = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(e, dict) or e.get("type") not in ("tool_use", "tool"):
+            continue
+        part = e.get("part") or {}
+        inp = (part.get("state") or {}).get("input")
+        if isinstance(inp, dict):
+            yield str(part.get("tool") or ""), inp
+
+
+def _inside(path, root):
+    return path == root or path.startswith(root.rstrip("/") + "/")
+
+
+def _resolve(token, cwd):
+    token = _GLOB_MAGIC.sub("", token).rstrip("/") or token
+    if not token or "\n" in token or "$" in token:
+        return None
+    p = os.path.expanduser(token)
+    p = p if os.path.isabs(p) else os.path.join(cwd, p)
+    return os.path.normpath(p)
+
+
+def hidden_accesses(raw, cwd, roots):
+    """Tool calls whose argument paths resolve into one of `roots` (the task's hidden-test dir and hx state dir).
+    Only tool_use arguments count: file paths from path-like keys and every shell token (with simple `cd` tracking),
+    resolved against `cwd`, normalised and compared after realpath too. Text the model writes or tool output that
+    merely mentions a path is not an access, and neither is a path outside these exact directories (another repo's
+    `.git/hx`, the repository's own `.git`). Returns [{"tool", "path"}], in call order, without duplicates."""
+    roots = [os.path.normpath(str(r)) for r in roots]
+    roots += [os.path.realpath(r) for r in roots]
+    found, seen = [], set()
+
+    def check(tool, token, cwd_now):
+        p = _resolve(token, cwd_now)
+        if p and any(_inside(x, r) for r in roots for x in (p, os.path.realpath(p))) and (tool, p) not in seen:
+            seen.add((tool, p)); found.append({"tool": tool, "path": p})
+
+    for tool, inp in tool_inputs(raw):
+        cwd_now = os.path.normpath(str(cwd))
+        for key, val in inp.items():
+            k = key.lower()
+            if k == "command" and isinstance(val, str):
+                try:
+                    toks = shlex.split(val, comments=False, posix=True)
+                except ValueError:
+                    toks = val.split()
+                prev = None
+                for t in toks:
+                    check(tool or "shell", t, cwd_now)
+                    if "=" in t:  # --file=PATH, VAR=PATH
+                        check(tool or "shell", t.split("=", 1)[1], cwd_now)
+                    if prev == "cd":
+                        nxt = _resolve(t, cwd_now)
+                        if nxt:
+                            cwd_now = nxt
+                    prev = t
+            elif k in _PATH_KEYS:
+                vals = val if isinstance(val, list) else [val]
+                for v in vals:
+                    if isinstance(v, str):
+                        check(tool, v, cwd_now)
+    return found
+
+
 def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=False, max_chars=None, reap=True, timeout_s=None, resume=False, force=False):
     """Run one role; returns (final_text, summary_line). feedback = path or None."""
     role = CFG["roles"].get(role_name)
@@ -614,10 +692,18 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
     reaped = reap_orphans([p["worktree"], p["hidden"]], since=first_call_at(p), report=reaped_procs) if reap else 0
     final, tok, steps, tools, errors, secs, step_toks = parse_events(raw)
     m = re.search(r'"sessionID"\s*:\s*"([^"]+)"', raw)
+    hidden_hits = [] if sees_hidden else hidden_accesses(raw, cwd, [p["hidden"], state_dir()])
+    if hidden_hits:  # the gate refuses until the hidden tests are rewritten (see cmd_gate / clear_hidden_flag)
+        (p["state"] / "hidden_access.json").write_text(json.dumps(
+            {"role": role_name, "n": n, "paths": hidden_hits[:10], "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}))
+    elif role_name == "tester":  # the tester wrote a fresh hidden suite: earlier access no longer matters
+        (p["state"] / "hidden_access.json").unlink(missing_ok=True)
     rec = {"task": task, "event": "call", "role": role_name, "n": n, "model": model, "seconds": secs,
            "session": m.group(1) if m else session, "resumed": bool(resume),
            "wall": round(time.time() - t0, 1), "steps": steps, "tool_calls": tools, "errors": errors,
-           "timeout": timeout, "stalled": stalled, "attempts": attempts, "hidden_access": (not sees_hidden) and (str(p["hidden"]) in raw or "/.git/hx/" in raw), "tokens": tok, "go_cost_est": est_cost(model, step_toks), "price_v": 2, "reaped": reaped, "env_dropped": env_dropped}
+           "timeout": timeout, "stalled": stalled, "attempts": attempts, "hidden_access": bool(hidden_hits), "tokens": tok, "go_cost_est": est_cost(model, step_toks), "price_v": 2, "reaped": reaped, "env_dropped": env_dropped}
+    if hidden_hits:
+        rec["hidden_paths"] = hidden_hits[:5]
     if reaped_procs:
         rec["reaped_procs"] = reaped_procs
     if force:
@@ -996,6 +1082,17 @@ def cmd_gate(a):
     env["PYTHONPATH"] = str(wt) + os.pathsep + env.get("PYTHONPATH", "")  # appended after filtering
     results["env_dropped"] = env_dropped
     fails = []
+    ha_file = p["state"] / "hidden_access.json"
+    if ha_file.exists():  # a worker/escalate call read the hidden tests: the result cannot be trusted (HX-30c)
+        try:
+            ha = json.loads(ha_file.read_text())
+        except ValueError:
+            ha = {}
+        results["hidden_access"] = [h.get("path") for h in ha.get("paths", [])] or True
+        fails.append(f"--- hidden_access: {ha.get('role', 'a role')} call #{ha.get('n', '?')} touched the hidden-test "
+                     f"directory ({', '.join(h.get('path', '?') for h in ha.get('paths', [])[:3])}). The hidden tests are "
+                     "compromised: have the tester write a fresh suite (`hx call tester`, which clears this flag), then "
+                     "rerun the worker from a clean state or escalate.")
     for f in ("visible_failure.txt", "hidden_failure.txt"):
         (p["state"] / f).unlink(missing_ok=True)
     for label, cmd in (("tests", a.test), ("hidden", a.hidden_cmd)):
