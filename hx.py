@@ -555,6 +555,115 @@ def rate_limited(raw, err):
     return False
 
 
+def isolation_agent(kind, hidden, state):
+    """OpenCode agent definition (v2 `agents` config) that fences the hidden-test dir, verified on OpenCode v2.3.0:
+    - "worker": read/glob/grep/list-style access to the hidden dir and hx state dir is denied (`external_directory`
+      and `read` rules; the tool's `path` is what is matched, `grep`'s own resource is the regex so it cannot be
+      used for this). Shell commands are NOT covered (a shell can still `cat` anything): `hidden_accesses` and the
+      gate (HX-30b/c) catch those.
+    - "tester": every `edit`/`write` is denied except inside the hidden dir, so the project stays read-only for the
+      tester's file tools. Shell writes are not covered either.
+    Rules are ordered and the last match wins."""
+    paths = []
+    for d in (hidden, state):
+        for x in (str(d), os.path.realpath(str(d))):
+            for pat in (x, x + "/*", x + "/**"):
+                if pat not in paths:
+                    paths.append(pat)
+    perms = [{"action": "*", "resource": "*", "effect": "allow"}]
+    if kind == "worker":
+        for pat in paths:
+            perms.append({"action": "external_directory", "resource": pat, "effect": "deny"})
+            perms.append({"action": "read", "resource": pat, "effect": "deny"})
+    elif kind == "tester":
+        perms.append({"action": "edit", "resource": "*", "effect": "deny"})
+        for pat in [x for x in paths if x.startswith((str(hidden), os.path.realpath(str(hidden))))]:
+            perms.append({"action": "edit", "resource": pat, "effect": "allow"})
+    else:
+        raise ValueError(f"unknown isolation kind {kind!r}")
+    name = f"hx-{kind}"
+    return name, {"agents": {name: {"description": f"hx {kind} with the hidden tests fenced", "mode": "primary",
+                                   "permissions": perms}}}
+
+
+_PATH_KEYS = {"path", "filepath", "file_path", "pattern", "glob", "directory", "dir", "cwd", "workdir", "include",
+              "file", "files", "paths"}
+_GLOB_MAGIC = re.compile(r"[*?\[{].*$")
+
+
+def tool_inputs(raw):
+    """(tool name, input dict) of every tool_use event in an OpenCode JSON event stream."""
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            e = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(e, dict) or e.get("type") not in ("tool_use", "tool"):
+            continue
+        part = e.get("part") or {}
+        inp = (part.get("state") or {}).get("input")
+        if isinstance(inp, dict):
+            yield str(part.get("tool") or ""), inp
+
+
+def _inside(path, root):
+    return path == root or path.startswith(root.rstrip("/") + "/")
+
+
+def _resolve(token, cwd):
+    token = _GLOB_MAGIC.sub("", token).rstrip("/") or token
+    if not token or "\n" in token or "$" in token:
+        return None
+    p = os.path.expanduser(token)
+    p = p if os.path.isabs(p) else os.path.join(cwd, p)
+    return os.path.normpath(p)
+
+
+def hidden_accesses(raw, cwd, roots):
+    """Tool calls whose argument paths resolve into one of `roots` (the task's hidden-test dir and hx state dir).
+    Only tool_use arguments count: file paths from path-like keys and every shell token (with simple `cd` tracking),
+    resolved against `cwd`, normalised and compared after realpath too. Text the model writes or tool output that
+    merely mentions a path is not an access, and neither is a path outside these exact directories (another repo's
+    `.git/hx`, the repository's own `.git`). Returns [{"tool", "path"}], in call order, without duplicates."""
+    roots = [os.path.normpath(str(r)) for r in roots]
+    roots += [os.path.realpath(r) for r in roots]
+    found, seen = [], set()
+
+    def check(tool, token, cwd_now):
+        p = _resolve(token, cwd_now)
+        if p and any(_inside(x, r) for r in roots for x in (p, os.path.realpath(p))) and (tool, p) not in seen:
+            seen.add((tool, p)); found.append({"tool": tool, "path": p})
+
+    for tool, inp in tool_inputs(raw):
+        cwd_now = os.path.normpath(str(cwd))
+        for key, val in inp.items():
+            k = key.lower()
+            if k == "command" and isinstance(val, str):
+                try:
+                    toks = shlex.split(val, comments=False, posix=True)
+                except ValueError:
+                    toks = val.split()
+                prev = None
+                for t in toks:
+                    check(tool or "shell", t, cwd_now)
+                    if "=" in t:  # --file=PATH, VAR=PATH
+                        check(tool or "shell", t.split("=", 1)[1], cwd_now)
+                    if prev == "cd":
+                        nxt = _resolve(t, cwd_now)
+                        if nxt:
+                            cwd_now = nxt
+                    prev = t
+            elif k in _PATH_KEYS:
+                vals = val if isinstance(val, list) else [val]
+                for v in vals:
+                    if isinstance(v, str):
+                        check(tool, v, cwd_now)
+    return found
+
+
 def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=False, max_chars=None, reap=True, timeout_s=None, resume=False, force=False):
     """Run one role; returns (final_text, summary_line). feedback = path or None."""
     role = CFG["roles"].get(role_name)
@@ -582,12 +691,23 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
                   "where you stopped. Run `git status` and `git diff --stat` first; do not redo finished work.\n\n"
                   "# Feedback (fix these too; \"Yok.\" means none)\n" + (Path(feedback).read_text() if feedback else "Yok.")
                   + "\n\nThen go through the final checklist of the original instructions and write the report as asked there.")
+    iso = None if (read_only or role.get("read_only")) else role.get("isolation")
     if read_only or role.get("read_only"):
         args += ["--agent", "plan"]
+    elif iso:  # opt-in per role in config.json; needs a private server so OPENCODE_CONFIG_CONTENT takes effect
+        agent_name, agent_cfg = isolation_agent(iso, p["hidden"], state_dir())
+        args += ["--standalone", "--agent", agent_name]
     args.append(prompt)
     base_env = dict(os.environ)
     env, env_dropped = child_env(base_env, CFG.get("env_passthrough") or [])
     env["PWD"] = str(cwd)  # added after filtering so the role's cwd is never dropped
+    if iso:  # merge into an existing OPENCODE_CONFIG_CONTENT instead of replacing it
+        try:
+            merged = json.loads(env.get("OPENCODE_CONFIG_CONTENT") or "{}")
+        except ValueError:
+            merged = {}
+        merged.setdefault("agents", {}).update(agent_cfg["agents"])
+        env["OPENCODE_CONFIG_CONTENT"] = json.dumps(merged)
     with _lock:
         # only plain "<role>-<n>.jsonl" files count; "<role>-<n>.attempt<k>.jsonl" retries must not shift n
         n = sum(1 for f in p["state"].glob(f"{role_name}-*.jsonl") if f.stem[len(role_name) + 1:].isdigit()) + 1
@@ -614,10 +734,19 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
     reaped = reap_orphans([p["worktree"], p["hidden"]], since=first_call_at(p), report=reaped_procs) if reap else 0
     final, tok, steps, tools, errors, secs, step_toks = parse_events(raw)
     m = re.search(r'"sessionID"\s*:\s*"([^"]+)"', raw)
+    hidden_hits = [] if sees_hidden else hidden_accesses(raw, cwd, [p["hidden"], state_dir()])
+    if hidden_hits:  # the gate refuses until the hidden tests are rewritten (see cmd_gate / clear_hidden_flag)
+        (p["state"] / "hidden_access.json").write_text(json.dumps(
+            {"ha_v": 2, "role": role_name, "n": n, "paths": hidden_hits[:10],
+             "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}))
+    elif role_name == "tester":  # the tester wrote a fresh hidden suite: earlier access no longer matters
+        (p["state"] / "hidden_access.json").unlink(missing_ok=True)
     rec = {"task": task, "event": "call", "role": role_name, "n": n, "model": model, "seconds": secs,
            "session": m.group(1) if m else session, "resumed": bool(resume),
            "wall": round(time.time() - t0, 1), "steps": steps, "tool_calls": tools, "errors": errors,
-           "timeout": timeout, "stalled": stalled, "attempts": attempts, "hidden_access": (not sees_hidden) and (str(p["hidden"]) in raw or "/.git/hx/" in raw), "tokens": tok, "go_cost_est": est_cost(model, step_toks), "price_v": 2, "reaped": reaped, "env_dropped": env_dropped}
+           "timeout": timeout, "stalled": stalled, "attempts": attempts, "hidden_access": bool(hidden_hits), "ha_v": 2, "tokens": tok, "go_cost_est": est_cost(model, step_toks), "price_v": 2, "reaped": reaped, "env_dropped": env_dropped}
+    if hidden_hits:
+        rec["hidden_paths"] = hidden_hits[:5]
     if reaped_procs:
         rec["reaped_procs"] = reaped_procs
     if force:
@@ -996,6 +1125,17 @@ def cmd_gate(a):
     env["PYTHONPATH"] = str(wt) + os.pathsep + env.get("PYTHONPATH", "")  # appended after filtering
     results["env_dropped"] = env_dropped
     fails = []
+    ha_file = p["state"] / "hidden_access.json"
+    if ha_file.exists():  # a worker/escalate call read the hidden tests: the result cannot be trusted (HX-30c)
+        try:
+            ha = json.loads(ha_file.read_text())
+        except ValueError:
+            ha = {}
+        results["hidden_access"] = [h.get("path") for h in ha.get("paths", [])] or True
+        fails.append(f"--- hidden_access: {ha.get('role', 'a role')} call #{ha.get('n', '?')} touched the hidden-test "
+                     f"directory ({', '.join(h.get('path', '?') for h in ha.get('paths', [])[:3])}). The hidden tests are "
+                     "compromised: have the tester write a fresh suite (`hx call tester`, which clears this flag), then "
+                     "rerun the worker from a clean state or escalate.")
     for f in ("visible_failure.txt", "hidden_failure.txt"):
         (p["state"] / f).unlink(missing_ok=True)
     for label, cmd in (("tests", a.test), ("hidden", a.hidden_cmd)):
@@ -1205,7 +1345,7 @@ def report_summary(records, thresholds=None):
     First-round gate pass: the first gate of every phase (a phase ends at its phase_commit)."""
     th = dict(REPORT_DEFAULTS, **(thresholds or {}))
     first, seen, tasks, esc_tasks = [], set(), set(), set()
-    calls = flagged = hidden = unclear = reviews = rejected = 0
+    calls = flagged = hidden = hidden_old = unclear = reviews = rejected = 0
     for r in records:
         t, ev = r.get("task"), r.get("event")
         tasks.add(t)
@@ -1216,7 +1356,12 @@ def report_summary(records, thresholds=None):
         elif ev == "call":
             calls += 1
             flagged += bool(r.get("timeout") or r.get("stalled"))
-            hidden += bool(r.get("hidden_access"))
+            # ha_v 2 = resolved tool_use paths (HX-30); records without it used the old substring test, which gave
+            # false positives, so they are shown apart and never trigger the warning
+            if r.get("ha_v", 1) >= 2:
+                hidden += bool(r.get("hidden_access"))
+            else:
+                hidden_old += bool(r.get("hidden_access"))
             if r.get("role") == "escalate":
                 esc_tasks.add(t)
         elif ev == "triage":
@@ -1228,7 +1373,7 @@ def report_summary(records, thresholds=None):
            "reviews": reviews, "review_reject": (rejected / reviews) if reviews else None,
            "escalated_tasks": len(esc_tasks), "escalate_task_rate": (len(esc_tasks) / len(tasks)) if tasks else None,
            "timeout_stalled": flagged, "timeout_stalled_rate": (flagged / calls) if calls else None,
-           "hidden_access": hidden, "belirsiz": unclear}
+           "hidden_access": hidden, "hidden_access_legacy": hidden_old, "belirsiz": unclear}
     warn = []
     if out["first_round_pass"] is not None and out["first_round_pass"] < th["first_round_pass_min"]:
         warn.append(f"first-round gate pass {out['first_round_pass']:.0%} < {th['first_round_pass_min']:.0%}")
@@ -1253,6 +1398,8 @@ def print_report_summary(sm, since):
     print(f"escalated tasks:       {sm['escalated_tasks']} ({pct(sm['escalate_task_rate'])})")
     print(f"TIMEOUT/STALLED calls: {sm['timeout_stalled']} ({pct(sm['timeout_stalled_rate'])})")
     print(f"hidden_access calls:   {sm['hidden_access']}")
+    if sm.get("hidden_access_legacy"):
+        print(f"  (+{sm['hidden_access_legacy']} older hidden_access flags from the substring test, not counted)")
     print(f"BELIRSIZ lines:        {sm['belirsiz']}")
     for w in sm["warnings"]:
         print(f"WARNING: {w}")

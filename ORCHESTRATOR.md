@@ -88,6 +88,7 @@ Uçak kontrol listesi gibi: kısa, sıralı, tek anlamlı.
 - Model veya şablon değiştirirken önce `lab/` ile eski düzenle karşılaştır (`lab/RESULTS-v5.md`).
 
 ## Sınırlar
+- Gizli test izolasyonu (HX-30): `hidden_access` artık yalnız `tool_use` argümanlarındaki çözümlenmiş yollardan hesaplanır (metin ve araç çıktısındaki anmalar sayılmaz). Worker/escalate çağrısı gizli dizine veya hx state dizinine dokunursa kapı FAIL verir (`hidden_access` alanı); `hx call tester` taze bir takım yazınca bayrak kalkar, sonra worker temiz durumdan yeniden koşar. İsteğe bağlı sert izolasyon: `config.json` rolüne `"isolation": "worker"` (read/glob/grep dahil dosya araçları gizli ve state dizinine kapalı) veya tester için `"isolation": "tester"` (edit/write yalnız gizli dizinde) eklenir; bu mod `opencode run --standalone --agent hx-<tür>` kullanır, shell komutlarını kapsamaz ve davranışı değiştirebileceği için ölçülmeden açılmaz (HX-21).
 - hx worktree'inde iş sürerken kendi uzun süreçlerini (dev server, nohup) başlatma; kapı onları yetim sayabilir (görevin ilk `hx call`'undan sonra doğmuş, ppid=1, cwd'si worktree içinde olan süreçler öldürülür; pid ve komut satırı metrics'e `reaped_procs` olarak yazılır).
 - Belirsiz istekleri ("bir uygulama yaz") worker'a verme; önce spec'e çevir.
 - 20'den fazla dosyaya yayılan refactor ve mimari kararlarda önce bana plan sun.
