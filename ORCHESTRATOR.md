@@ -90,6 +90,8 @@ Uçak kontrol listesi gibi: kısa, sıralı, tek anlamlı.
 ## Sınırlar
 - Belirsiz istekleri ("bir uygulama yaz") worker'a verme; önce spec'e çevir.
 - 20'den fazla dosyaya yayılan refactor ve mimari kararlarda önce bana plan sun.
+- Durdurma anahtarı: `<state>/STOP` (`git rev-parse --git-common-dir`/hx/STOP) varsa `hx call` ve `hx pair` başlamaz; dosya silinene kadar yeni model çağrısı yok. Sert maliyet tavanı bilerek yok (iyi giden işi yarıda keser); maliyet yalnız raporda görünür.
+- `hx report --since 7d` kalite sinyallerini hesaplar (ilk turda kapı geçme, denetçi reddi, yükseltme, TIMEOUT/STALLED, hidden_access, BELIRSIZ) ve eşik aşılırsa WARNING yazar (varsayılanlar: kapı < %60, red > %40, hidden_access > 0, TIMEOUT/STALLED > %10, yükseltilen iş > %30; `config.report_thresholds` ile değişir).
 - Haftada bir `hx report` çıktısını bana özetle (tur, kapı başarısızlığı, yükseltme, denetçi reddi,
   Go maliyeti; tahmin token'lardan, `hx prices --refresh` ile güncel fiyatlar; ayda bir yenile). İki hafta sonunda: kapıyı ilk turda geçme < %60 veya denetçi reddi > %40 ise düzeni
   birlikte yeniden değerlendirelim.

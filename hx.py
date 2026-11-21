@@ -412,7 +412,16 @@ def last_session(task, role_name):
     return sid
 
 
+def check_stop():
+    """Operator kill switch: while `<state>/STOP` exists no new model call or pair starts (running calls finish)."""
+    stop = state_dir() / "STOP"
+    if stop.exists():
+        note = stop.read_text(encoding="utf-8", errors="replace").strip()[:200]
+        sys.exit(f"hx: STOP file present ({stop}){': ' + note if note else ''}; remove it to continue")
+
+
 def cmd_call(a):
+    check_stop()
     force = getattr(a, "force_retry", False)
     check_retry_budget(a.task, a.role, force=force, resume=a.resume)
     _, out, line = run_role(a.role, a.task, a.spec, a.feedback, a.model, a.read_only, a.max_chars,
@@ -477,6 +486,7 @@ def exit_text(code):
 
 def cmd_pair(a):
     """Tester and worker read the same spec and never each other's output, so they run concurrently."""
+    check_stop()
     res, fails = {}, {}
 
     def go(role):
@@ -792,13 +802,94 @@ def cmd_note(a):
     print("noted")
 
 
+REPORT_DEFAULTS = {"first_round_pass_min": 0.6, "review_reject_max": 0.4, "hidden_access_max": 0,
+                   "timeout_stalled_rate_max": 0.1, "escalate_task_rate_max": 0.3}
+
+
+def parse_since(text):
+    """'7d', '12h', '2w' -> UTC timestamp string of now minus that span (metric ts format); None when empty."""
+    if not text:
+        return None
+    m = re.fullmatch(r"(\d+)([hdw])", str(text).strip())
+    if not m:
+        sys.exit(f"hx: --since expects a span like 12h, 7d or 2w, got {text!r}")
+    secs = int(m.group(1)) * {"h": 3600, "d": 86400, "w": 604800}[m.group(2)]
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - secs))
+
+
+def report_summary(records, thresholds=None):
+    """Quality signals over a list of metrics records (already filtered by time) plus threshold warnings.
+    First-round gate pass: the first gate of every phase (a phase ends at its phase_commit)."""
+    th = dict(REPORT_DEFAULTS, **(thresholds or {}))
+    first, seen, tasks, esc_tasks = [], set(), set(), set()
+    calls = flagged = hidden = unclear = reviews = rejected = 0
+    for r in records:
+        t, ev = r.get("task"), r.get("event")
+        tasks.add(t)
+        if ev == "gate" and t not in seen:
+            seen.add(t); first.append(r.get("gate") == "PASS")
+        elif ev == "phase_commit":
+            seen.discard(t)
+        elif ev == "call":
+            calls += 1
+            flagged += bool(r.get("timeout") or r.get("stalled"))
+            hidden += bool(r.get("hidden_access"))
+            if r.get("role") == "escalate":
+                esc_tasks.add(t)
+        elif ev == "triage":
+            unclear += r.get("unclear", 0)
+        elif ev == "review":
+            reviews += 1; rejected += r.get("verdict") != "ONAY"
+    out = {"tasks": len(tasks), "calls": calls, "first_round_gates": len(first),
+           "first_round_pass": (sum(first) / len(first)) if first else None,
+           "reviews": reviews, "review_reject": (rejected / reviews) if reviews else None,
+           "escalated_tasks": len(esc_tasks), "escalate_task_rate": (len(esc_tasks) / len(tasks)) if tasks else None,
+           "timeout_stalled": flagged, "timeout_stalled_rate": (flagged / calls) if calls else None,
+           "hidden_access": hidden, "belirsiz": unclear}
+    warn = []
+    if out["first_round_pass"] is not None and out["first_round_pass"] < th["first_round_pass_min"]:
+        warn.append(f"first-round gate pass {out['first_round_pass']:.0%} < {th['first_round_pass_min']:.0%}")
+    if out["review_reject"] is not None and out["review_reject"] > th["review_reject_max"]:
+        warn.append(f"reviewer rejection {out['review_reject']:.0%} > {th['review_reject_max']:.0%}")
+    if hidden > th["hidden_access_max"]:
+        warn.append(f"hidden_access on {hidden} calls (max {th['hidden_access_max']})")
+    if out["timeout_stalled_rate"] is not None and out["timeout_stalled_rate"] > th["timeout_stalled_rate_max"]:
+        warn.append(f"TIMEOUT/STALLED {flagged}/{calls} calls > {th['timeout_stalled_rate_max']:.0%}")
+    if out["escalate_task_rate"] is not None and out["escalate_task_rate"] > th["escalate_task_rate_max"]:
+        warn.append(f"escalated {len(esc_tasks)}/{len(tasks)} tasks > {th['escalate_task_rate_max']:.0%}")
+    out["warnings"] = warn
+    return out
+
+
+def print_report_summary(sm, since):
+    pct = lambda v: "n/a" if v is None else f"{v:.0%}"
+    print(f"\n== quality signals ({'since ' + since if since else 'all time'}) ==")
+    print(f"tasks {sm['tasks']}, calls {sm['calls']}")
+    print(f"first-round gate pass: {pct(sm['first_round_pass'])} ({sm['first_round_gates']} phases)")
+    print(f"reviewer rejection:    {pct(sm['review_reject'])} ({sm['reviews']} recorded reviews)")
+    print(f"escalated tasks:       {sm['escalated_tasks']} ({pct(sm['escalate_task_rate'])})")
+    print(f"TIMEOUT/STALLED calls: {sm['timeout_stalled']} ({pct(sm['timeout_stalled_rate'])})")
+    print(f"hidden_access calls:   {sm['hidden_access']}")
+    print(f"BELIRSIZ lines:        {sm['belirsiz']}")
+    for w in sm["warnings"]:
+        print(f"WARNING: {w}")
+    if not sm["warnings"]:
+        print("no threshold exceeded")
+
+
 def cmd_report(a):
     mp = state_dir() / "metrics.jsonl"
     if not mp.exists():
         print("no metrics yet"); return
     tasks = {}
+    since = getattr(a, "since", None)
+    cutoff = parse_since(since)
+    window = []
     for line in mp.read_text().splitlines():
         r = json.loads(line)
+        if cutoff and r.get("ts", "") < cutoff:
+            continue
+        window.append(r)
         t = tasks.setdefault(r["task"], {"calls": {}, "gates": 0, "gate_fail": 0, "cost": 0.0, "notes": {}})
         if r["event"] == "call":
             t["calls"][r["role"]] = t["calls"].get(r["role"], 0) + 1
@@ -818,6 +909,7 @@ def cmd_report(a):
         calls = " ".join(f"{k}:{v}" for k, v in t["calls"].items())
         tri = f" triage(code/test/unclear)={t['triage'][0]}/{t['triage'][1]}/{t['triage'][2]}" if "triage" in t else ""
         print(f"{name:20} {calls:32} {t['gates']:>5} {t['gate_fail']:>4} {t['cost']:>7.3f}  {t['notes']}{tri}")
+    print_report_summary(report_summary(window, CFG.get("report_thresholds")), since)
 
 
 def main():
@@ -845,7 +937,8 @@ def main():
     s = sp.add_parser("commit"); s.add_argument("task"); s.add_argument("-m", required=True); s.add_argument("--review", required=True)
     s.add_argument("--phase"); s.add_argument("--next", help="what the next phase is (goes into handoff.md)"); s.set_defaults(fn=cmd_commit)
     s = sp.add_parser("note"); s.add_argument("task"); s.add_argument("kv", nargs="+"); s.set_defaults(fn=cmd_note)
-    s = sp.add_parser("report"); s.set_defaults(fn=cmd_report)
+    s = sp.add_parser("report"); s.add_argument("--since", help="only records from the last 12h/7d/2w; thresholds from config.report_thresholds")
+    s.set_defaults(fn=cmd_report)
     s = sp.add_parser("prices"); s.add_argument("--refresh", action="store_true"); s.set_defaults(fn=cmd_prices)
     a = ap.parse_args()
     a.fn(a)
