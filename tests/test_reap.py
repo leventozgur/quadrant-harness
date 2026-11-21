@@ -162,6 +162,70 @@ class ReapOrphansTest(unittest.TestCase):
         self.assertEqual({TEST_SHELL[0], WORKER[0], RUN[0], RUN_SHELL[0]}, set(pids))
 
 
+class IsOpenCodeTest(unittest.TestCase):
+    def test_real_ps_lines_of_the_opencode_service_and_pty_daemon(self):
+        # copied from `ps -Ao pid=,ppid=,args=` on the maintainer's Mac (OpenCode v2.3.0), user paths kept as-is
+        self.assertTrue(hx.is_opencode("/opt/homebrew/Cellar/opencode-v2/2.3.0/bin/opencode serve --service"))
+        self.assertTrue(hx.is_opencode("/Users/leventozgur/.cache/opencode/bin/opencode-pty/0.5.2-ed3adb8c7531fef5/"
+                                       "opencode-pty daemon --runtime-dir /Users/leventozgur/.local/state/opencode/pty"))
+
+    def test_native_binary_not_node_or_bun_and_lookalikes_are_not_matched(self):
+        self.assertFalse(hx.is_opencode("node /x/opencode-thing.js"))
+        self.assertFalse(hx.is_opencode("bun run /x/opencode.ts"))
+        self.assertFalse(hx.is_opencode("tail -f /x/opencode.log"))
+        self.assertFalse(hx.is_opencode("/usr/bin/tail /opencode.log"))
+        self.assertFalse(hx.is_opencode(""))
+
+    def test_executable_under_a_path_with_spaces(self):
+        with tempfile.TemporaryDirectory() as d:
+            exe = Path(d) / "Jane Doe" / ".cache" / "opencode-pty"
+            exe.parent.mkdir(parents=True)
+            exe.write_text("#!/bin/sh\n")
+            self.assertTrue(hx.is_opencode(f"{exe} daemon --name x"))
+            self.assertFalse(hx.is_opencode(f"{Path(d) / 'Jane Doe' / 'missing'} daemon"))
+
+
+class InitOrphanTest(unittest.TestCase):
+    NOW = 10_000.0
+
+    def run_with(self, ps_text_out, lsof_out, rows, roots, since):
+        def fake_sh(cmd, *a, **k):
+            return SimpleNamespace(stdout=lsof_out if cmd[0] == "lsof" else ps_text_out)
+        with mock.patch.object(hx, "sh", fake_sh):
+            return hx.init_orphans(rows, roots, since, now=self.NOW)
+
+    def test_etime_seconds(self):
+        self.assertEqual(5, hx.etime_seconds("00:05"))
+        self.assertEqual(3725, hx.etime_seconds("1:02:05"))
+        self.assertEqual(86400 + 3725, hx.etime_seconds("1-01:02:05"))
+        self.assertIsNone(hx.etime_seconds("soon"))
+
+    def test_without_since_nothing_is_selected(self):
+        self.assertEqual(set(), hx.init_orphans([(5, 1, f"sleep {WT}")], [WT], None))
+
+    def test_young_init_orphan_with_cwd_in_root_is_selected_old_one_is_not(self):
+        ps_out = "  60     1 00:03\n  61     1 01:00:00\n  62   900 00:01\n"
+        lsof_out = f"p60\nn{WT}/sub\np61\nn{WT}\n"
+        got = self.run_with(ps_out, lsof_out, [], [WT], since=self.NOW - 30)
+        self.assertEqual({60}, got)  # 61 is older than `since`, 62 has a live parent
+
+    def test_cwd_elsewhere_is_kept_unless_the_path_is_named(self):
+        ps_out = "  60     1 00:03\n  63     1 00:03\n"
+        lsof_out = "p60\nn/Users/x/other\np63\nn/Users/x/other\n"
+        rows = [(63, 1, f"python3 job.py --wt {WT}")]
+        self.assertEqual({63}, self.run_with(ps_out, lsof_out, rows, [WT], since=self.NOW - 30))
+
+    def test_first_call_marker_roundtrip(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = {"state": Path(d)}
+            self.assertIsNone(hx.first_call_at(p))
+            hx.mark_first_call(p)
+            t = hx.first_call_at(p)
+            self.assertIsNotNone(t)
+            hx.mark_first_call(p)  # written once
+            self.assertEqual(t, hx.first_call_at(p))
+
+
 def alive(pid):
     try:
         os.kill(pid, 0)
@@ -231,6 +295,47 @@ class RealProcessTest(unittest.TestCase):
         self.assertGreaterEqual(count, 2)
         self.assertIsNotNone(parent.wait(timeout=5))
         self.assertTrue(wait_for(lambda: not alive(child)))
+
+    def orphan(self, cwd):
+        """A detached `sleep` handed to init: its parent bash exits right after starting it."""
+        pidfile = self.tmp / f"orphan-{len(self.procs)}.pid"
+        subprocess.run(["/bin/bash", "-c", 'sleep 40 & echo $! > "$1"', "x", str(pidfile)], cwd=str(cwd), check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.assertTrue(wait_for(pidfile.exists))
+        pid = int(pidfile.read_text())
+        self.procs.append(pid)
+
+        def ppid():
+            out = subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)], capture_output=True, text=True).stdout
+            return int(out.strip() or 0)
+        self.assertTrue(wait_for(lambda: ppid() == 1))
+        return pid
+
+    def test_an_init_orphan_started_after_the_first_call_with_cwd_in_the_worktree_is_killed(self):
+        since = time.time() - 1
+        pid = self.orphan(self.tmp / "wt")
+        self.assertTrue(alive(pid))
+        self.assertGreaterEqual(hx.reap_orphans([self.key], grace=0.2, since=since), 1)
+        self.assertTrue(wait_for(lambda: not alive(pid)))
+
+    def test_a_nohup_style_process_started_before_the_call_survives(self):
+        pid = self.orphan(self.tmp / "wt")
+        time.sleep(3.2)  # ps etime has 1 s resolution
+        since = time.time()
+        self.assertEqual(0, hx.reap_orphans([self.key], grace=0.2, since=since))
+        self.assertTrue(alive(pid))
+
+    def test_an_init_orphan_elsewhere_survives_and_without_since_nothing_is_selected(self):
+        since = time.time() - 1
+        elsewhere = self.tmp / "elsewhere"
+        elsewhere.mkdir()
+        other = self.orphan(elsewhere)
+        inside = self.orphan(self.tmp / "wt")
+        self.assertEqual(0, hx.reap_orphans([self.key], grace=0.2))  # no since: init orphans are not selected
+        self.assertTrue(alive(inside))
+        self.assertGreaterEqual(hx.reap_orphans([self.key], grace=0.2, since=since), 1)
+        self.assertTrue(wait_for(lambda: not alive(inside)))
+        self.assertTrue(alive(other))
 
     def test_an_opencode_tree_is_kept_when_the_path_is_not_named(self):
         parent, child = self.start()
