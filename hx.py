@@ -18,6 +18,7 @@
   hx.py report                                     per-task rounds, gate failures, escalations, Go cost
   hx.py prices [--refresh]                         show Go prices / refresh them from models.dev
   hx.py paths  <task>                              print worktree / hidden / state paths
+  hx.py clean  <task> [--branch] [--yes] [--dry-run]  remove the worktree (and branch); asks before dropping unsaved work
 
 State lives in <git-common-dir>/hx (inside .git, never in a diff). Roles and models: config.json.
 """
@@ -83,6 +84,76 @@ def cmd_new(a):
             sys.exit(f"hx: setup failed ({setup}): {(r.stdout + r.stderr)[-1500:]}")
     metric({"task": a.task, "event": "new", "base": base, "branch": branch, "setup": bool(setup)})
     print(json.dumps({"worktree": str(p["worktree"]), "hidden": str(p["hidden"]), "base": base, "branch": branch}))
+
+
+def main_worktree_branch(root):
+    """(main worktree path, its checked-out branch or None) from `git worktree list --porcelain` (first entry)."""
+    out = sh(["git", "worktree", "list", "--porcelain"], cwd=root).stdout
+    first = out.strip().split("\n\n")[0].splitlines()
+    path = next((l[9:] for l in first if l.startswith("worktree ")), None)
+    branch = next((l[18:] for l in first if l.startswith("branch refs/heads/")), None)
+    return path, branch
+
+
+def cmd_clean(a):
+    """Remove a task's worktree (and, with --branch, its branch) and prune. Work that is not saved anywhere else
+    (uncommitted files, commits not on the main checkout's branch) needs a yes: interactive prompt or --yes.
+    The state directory (hidden tests, metrics) is kept."""
+    p = task_paths(a.task)
+    root, wt, meta = p["root"], p["worktree"], {}
+    if p["meta"].exists():
+        meta = json.loads(p["meta"].read_text())
+    branch = meta.get("branch")
+    main_path, main_branch = main_worktree_branch(root)
+    registered = {l[9:] for l in sh(["git", "worktree", "list", "--porcelain"], cwd=root).stdout.splitlines()
+                  if l.startswith("worktree ")}
+    wt_known = str(wt) in registered or str(wt.resolve()) in registered
+    if not p["meta"].exists() and not wt_known:
+        sys.exit(f"hx: nothing to clean: no task {a.task} in this repository")
+    if main_path and os.path.realpath(str(wt)) == os.path.realpath(main_path):
+        sys.exit("hx: refusing to remove the main worktree")
+    here = os.path.realpath(os.getcwd())
+    if wt.exists() and (here == os.path.realpath(str(wt)) or here.startswith(os.path.realpath(str(wt)) + os.sep)):
+        sys.exit(f"hx: you are inside the worktree ({wt}); run hx clean from another directory")
+    risks = []
+    if wt.exists() and wt_known:
+        dirty = sh(["git", "status", "--porcelain"], cwd=wt, check=False).stdout.splitlines()
+        if dirty:
+            risks.append(f"{len(dirty)} uncommitted change(s) in the worktree, e.g. {dirty[0].strip()}")
+    branch_exists = bool(branch) and sh(["git", "rev-parse", "--verify", "-q", f"refs/heads/{branch}"],
+                                         cwd=root, check=False).returncode == 0
+    unmerged = []
+    if branch_exists:
+        if main_branch and branch != main_branch:
+            unmerged = sh(["git", "log", "--format=%h %s", branch, "--not", main_branch], cwd=root, check=False).stdout.splitlines()
+            if unmerged:
+                risks.append(f"{len(unmerged)} commit(s) on {branch} not on {main_branch}, e.g. {unmerged[0]}")
+        elif not main_branch:
+            risks.append(f"cannot tell whether {branch} is merged (main checkout has no branch)")
+    print(f"[hx] clean {a.task}: worktree {wt}" + (f", branch {branch}" if a.branch and branch_exists else ""))
+    for r in risks:
+        print(f"[hx] unsaved work: {r}")
+    if getattr(a, "dry_run", False):
+        print("[hx] dry run: nothing removed"); return
+    if risks and not a.yes:
+        if sys.stdin.isatty():
+            if input("remove anyway? [y/N] ").strip().lower() not in ("y", "yes"):
+                sys.exit("hx: clean cancelled")
+        else:
+            sys.exit("hx: refusing to remove unsaved work without confirmation; rerun with --yes")
+    if wt.exists() and wt_known:
+        sh(["git", "worktree", "remove", "--force", str(wt)], cwd=root)
+    sh(["git", "worktree", "prune"], cwd=root)
+    deleted = False
+    if a.branch and branch_exists:
+        flag = "-D" if unmerged or not main_branch else "-d"
+        r = sh(["git", "branch", flag, branch], cwd=root, check=False)
+        deleted = r.returncode == 0
+        if not deleted:
+            print(f"[hx] branch {branch} not deleted: {(r.stderr or r.stdout).strip()[:200]}")
+    metric({"task": a.task, "event": "clean", "worktree_removed": not wt.exists(), "branch_deleted": deleted,
+            "forced": bool(risks)})
+    print(f"[hx] removed worktree{' and branch' if deleted else ''}; state kept at {p['state']}")
 
 
 def cmd_paths(a):
@@ -952,6 +1023,11 @@ def main():
     s.add_argument("--max-chars", type=int, default=CFG["max_chars"]); s.set_defaults(fn=cmd_pair)
     s = sp.add_parser("triage"); s.add_argument("task"); s.add_argument("spec")
     s.add_argument("--max-chars", type=int, default=CFG["max_chars"]); s.set_defaults(fn=cmd_triage)
+    s = sp.add_parser("clean"); s.add_argument("task")
+    s.add_argument("--branch", action="store_true", help="also delete the task's branch")
+    s.add_argument("--yes", action="store_true", help="confirm removing uncommitted or unmerged work")
+    s.add_argument("--dry-run", action="store_true", help="show what would be removed and the unsaved work, change nothing")
+    s.set_defaults(fn=cmd_clean)
     s = sp.add_parser("paths"); s.add_argument("task"); s.set_defaults(fn=cmd_paths)
     s = sp.add_parser("call"); s.add_argument("role"); s.add_argument("task"); s.add_argument("spec")
     s.add_argument("--feedback"); s.add_argument("--model"); s.add_argument("--read-only", action="store_true")
