@@ -139,6 +139,8 @@ class CanaryTest(Base):
         self.run_role("worker", [tool_event("shell", command=f"cat {self.p['hidden']}/secret.test.py"), STEP])
         rec = self.call_records()[-1]
         self.assertTrue(rec["hidden_access"])
+        self.assertEqual(2, rec["ha_v"])
+        self.assertEqual(2, json.loads((self.p["state"] / "hidden_access.json").read_text())["ha_v"])
         self.assertEqual(str(self.p["hidden"]) + "/secret.test.py", rec["hidden_paths"][0]["path"])
         self.assertTrue((self.p["state"] / "hidden_access.json").exists())
         code, payload = self.gate()

@@ -737,13 +737,14 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
     hidden_hits = [] if sees_hidden else hidden_accesses(raw, cwd, [p["hidden"], state_dir()])
     if hidden_hits:  # the gate refuses until the hidden tests are rewritten (see cmd_gate / clear_hidden_flag)
         (p["state"] / "hidden_access.json").write_text(json.dumps(
-            {"role": role_name, "n": n, "paths": hidden_hits[:10], "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}))
+            {"ha_v": 2, "role": role_name, "n": n, "paths": hidden_hits[:10],
+             "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}))
     elif role_name == "tester":  # the tester wrote a fresh hidden suite: earlier access no longer matters
         (p["state"] / "hidden_access.json").unlink(missing_ok=True)
     rec = {"task": task, "event": "call", "role": role_name, "n": n, "model": model, "seconds": secs,
            "session": m.group(1) if m else session, "resumed": bool(resume),
            "wall": round(time.time() - t0, 1), "steps": steps, "tool_calls": tools, "errors": errors,
-           "timeout": timeout, "stalled": stalled, "attempts": attempts, "hidden_access": bool(hidden_hits), "tokens": tok, "go_cost_est": est_cost(model, step_toks), "price_v": 2, "reaped": reaped, "env_dropped": env_dropped}
+           "timeout": timeout, "stalled": stalled, "attempts": attempts, "hidden_access": bool(hidden_hits), "ha_v": 2, "tokens": tok, "go_cost_est": est_cost(model, step_toks), "price_v": 2, "reaped": reaped, "env_dropped": env_dropped}
     if hidden_hits:
         rec["hidden_paths"] = hidden_hits[:5]
     if reaped_procs:
@@ -1344,7 +1345,7 @@ def report_summary(records, thresholds=None):
     First-round gate pass: the first gate of every phase (a phase ends at its phase_commit)."""
     th = dict(REPORT_DEFAULTS, **(thresholds or {}))
     first, seen, tasks, esc_tasks = [], set(), set(), set()
-    calls = flagged = hidden = unclear = reviews = rejected = 0
+    calls = flagged = hidden = hidden_old = unclear = reviews = rejected = 0
     for r in records:
         t, ev = r.get("task"), r.get("event")
         tasks.add(t)
@@ -1355,7 +1356,12 @@ def report_summary(records, thresholds=None):
         elif ev == "call":
             calls += 1
             flagged += bool(r.get("timeout") or r.get("stalled"))
-            hidden += bool(r.get("hidden_access"))
+            # ha_v 2 = resolved tool_use paths (HX-30); records without it used the old substring test, which gave
+            # false positives, so they are shown apart and never trigger the warning
+            if r.get("ha_v", 1) >= 2:
+                hidden += bool(r.get("hidden_access"))
+            else:
+                hidden_old += bool(r.get("hidden_access"))
             if r.get("role") == "escalate":
                 esc_tasks.add(t)
         elif ev == "triage":
@@ -1367,7 +1373,7 @@ def report_summary(records, thresholds=None):
            "reviews": reviews, "review_reject": (rejected / reviews) if reviews else None,
            "escalated_tasks": len(esc_tasks), "escalate_task_rate": (len(esc_tasks) / len(tasks)) if tasks else None,
            "timeout_stalled": flagged, "timeout_stalled_rate": (flagged / calls) if calls else None,
-           "hidden_access": hidden, "belirsiz": unclear}
+           "hidden_access": hidden, "hidden_access_legacy": hidden_old, "belirsiz": unclear}
     warn = []
     if out["first_round_pass"] is not None and out["first_round_pass"] < th["first_round_pass_min"]:
         warn.append(f"first-round gate pass {out['first_round_pass']:.0%} < {th['first_round_pass_min']:.0%}")
@@ -1392,6 +1398,8 @@ def print_report_summary(sm, since):
     print(f"escalated tasks:       {sm['escalated_tasks']} ({pct(sm['escalate_task_rate'])})")
     print(f"TIMEOUT/STALLED calls: {sm['timeout_stalled']} ({pct(sm['timeout_stalled_rate'])})")
     print(f"hidden_access calls:   {sm['hidden_access']}")
+    if sm.get("hidden_access_legacy"):
+        print(f"  (+{sm['hidden_access_legacy']} older hidden_access flags from the substring test, not counted)")
     print(f"BELIRSIZ lines:        {sm['belirsiz']}")
     for w in sm["warnings"]:
         print(f"WARNING: {w}")

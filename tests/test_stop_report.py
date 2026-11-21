@@ -74,7 +74,7 @@ class SummaryTest(unittest.TestCase):
 
     def test_calls_escalation_timeouts_hidden_access_and_belirsiz(self):
         rs = [rec("A", "call", role="worker"), rec("A", "call", role="escalate", timeout=True),
-              rec("B", "call", role="worker", stalled=True, hidden_access=True),
+              rec("B", "call", role="worker", stalled=True, hidden_access=True, ha_v=2),
               rec("B", "call", role="tester"), rec("A", "triage", unclear=2), rec("B", "triage", code_errors=1)]
         sm = hx.report_summary(rs)
         self.assertEqual(4, sm["calls"])
@@ -88,11 +88,32 @@ class SummaryTest(unittest.TestCase):
         self.assertIn("escalated 1/2", joined)
 
     def test_thresholds_can_be_overridden_and_empty_input_is_clean(self):
-        sm = hx.report_summary([rec("A", "call", role="worker", hidden_access=True)], {"hidden_access_max": 5})
+        sm = hx.report_summary([rec("A", "call", role="worker", hidden_access=True, ha_v=2)], {"hidden_access_max": 5})
         self.assertEqual([], sm["warnings"])
         sm = hx.report_summary([])
         self.assertEqual([], sm["warnings"])
         self.assertIsNone(sm["first_round_pass"])
+
+
+class HiddenAccessVersionTest(unittest.TestCase):
+    def test_records_without_ha_v_are_legacy_and_do_not_warn(self):
+        sm = hx.report_summary([rec("A", "call", role="worker", hidden_access=True),
+                                rec("B", "call", role="worker", hidden_access=True, ha_v=1),
+                                rec("C", "call", role="worker", hidden_access=False, ha_v=2)])
+        self.assertEqual(0, sm["hidden_access"])
+        self.assertEqual(2, sm["hidden_access_legacy"])
+        self.assertFalse(any("hidden_access" in w for w in sm["warnings"]))
+
+    def test_new_records_count_and_warn_and_the_report_shows_legacy_separately(self):
+        rs = [rec("A", "call", role="worker", hidden_access=True), rec("B", "call", role="worker", hidden_access=True, ha_v=2)]
+        sm = hx.report_summary(rs)
+        self.assertEqual(1, sm["hidden_access"])
+        self.assertTrue(any("hidden_access on 1 calls" in w for w in sm["warnings"]))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            hx.print_report_summary(sm, None)
+        self.assertIn("hidden_access calls:   1", buf.getvalue())
+        self.assertIn("+1 older hidden_access flags", buf.getvalue())
 
 
 class SinceTest(unittest.TestCase):
