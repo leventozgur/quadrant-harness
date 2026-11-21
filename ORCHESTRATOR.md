@@ -57,7 +57,7 @@ Go modellerine giden şablonlar İngilizce (araştırma + lab v5); raporları T�
    Yeni bir Sonnet 5.5 subagent'ını /Users/leventozgur/Desktop/Projects/quadrant-harness/templates/reviewer.md metniyle başlat; {SPEC_PATH},
    {DIFF_PATH} ve {GATE_PATH} (<state>/last_gate.txt) yollarını doldur. Ona worker raporunu ve
    gizli testleri verme.
-7. Denetçi ONAY → kabul. Bulgu varsa yalnızca bulgudaki satırları oku; geçerliyse bulguları
+7. Denetçinin çıktısını bir dosyaya yaz ve `hx review <iş> <çıktı.md>` ile kaydet (ONAY yalnız çıktı tek satır "ONAY" ise; hash `hx diff`'in yazdığı review.diff'ten alınır). Denetçi ONAY → kabul. Bulgu varsa yalnızca bulgudaki satırları oku; geçerliyse bulguları
    feedback dosyasına yazıp 5. adımdaki gibi worker'a geri ver (aynı tekrar sınırı geçerli).
 8. `hx note <iş> verdict=<kabul|ret> solved_by=<worker|escalate|sonnet> review=<ONAY|bulgu>`.
    Kabul edilen worktree'yi benim onayımla ana dala birleştir; push etme.
@@ -67,8 +67,8 @@ Bir iş birden çok faza bölündüyse her faz kendi döngüsüdür ve ayrı com
 1. Her faz için ayrı spec yaz (`<iş>-p1.md`, `<iş>-p2.md` …); tek worktree (`hx new` bir kez).
 2. Faz döngüsü: `hx pair` (sonraki fazlarda `hx call tester` + `hx call worker`) → kapı → gerekirse triage/geri
    bildirim → `hx diff` → Sonnet kör denetim. Önceki fazların gizli testleri dizinde kalır, kapı onları da koşturur.
-3. Kapı PASS + denetçi ONAY → `hx commit <iş> -m "<iş> faz N: …" --review ONAY --phase N --next "<sonraki faz>"`.
-   Komut kapı sonrasında ağaç değiştiyse veya ONAY yoksa reddeder. Sonraki fazın kapısı ve diff'i bu commit'ten başlar;
+3. Kapı PASS + denetçi ONAY → `hx commit <iş> -m "<iş> faz N: …" --phase N --next "<sonraki faz>"`.
+   Komut kapı sonrasında ağaç değiştiyse, `hx review` kaydı yoksa, kayıt RED ise veya ONAY başka bir diff'e verilmişse reddeder (`--review ONAY` artık gerekmez, verilirse yok sayılır). Sonraki fazın kapısı ve diff'i bu commit'ten başlar;
    bütün iş için `hx diff <iş> --all`.
 4. Commit'ten sonra durma ve onay bekleme; doğrudan sıradaki faza geç (gece boyu döngü). Bağlam otomatik
    sıkıştırılırsa önce `<state>/handoff.md` dosyasını oku.
