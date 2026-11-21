@@ -187,10 +187,128 @@ def cmd_prices(a):
 _lock = threading.Lock()
 
 
-def reap_orphans(paths, grace=3.0):
+def is_opencode(args):
+    """True when the executable name (basename of argv[0]) starts with "opencode": `opencode`,
+    `opencode-pty`, `/opt/homebrew/.../bin/opencode`. `ps` joins argv with spaces, so an executable under a path
+    with spaces (`/Users/Jane Doe/.cache/opencode/bin/opencode-pty daemon`) is recognised by growing the leading
+    tokens until the joined path exists on disk."""
+    toks = args.split()
+    for k in range(1, min(len(toks), 6) + 1):
+        cand = " ".join(toks[:k])
+        if os.path.basename(cand).startswith("opencode") and (k == 1 or os.path.exists(cand)):
+            return True
+        if k == 1 and not toks[0].startswith("/"):
+            break  # a bare command name cannot contain spaces
+    return False
+
+
+def reap_targets(rows, keys, protect=(), extra=()):
+    """Pick the pids to signal from (pid, ppid, args) rows — pure, so the decision is testable.
+
+    A process is a target only when BOTH hold: its command line contains one of `keys` (substring, as before) and
+    it runs under OpenCode (itself or an ancestor up the ppid chain is an OpenCode process), or it is in `extra`
+    (init orphans selected by reap_orphans). Every descendant of a
+    target is a target too (npm test -> node --test -> workers). `protect` (hx and its ancestors) is never killed.
+    A user's shell, editor, `tail -f` or probe script that merely names the path has no OpenCode ancestor, so it is
+    left alone."""
+    keys = [str(k) for k in keys]
+    protect = set(protect)
+    parent = {pid: ppid for pid, ppid, _ in rows}
+    args_of = {pid: args for pid, _, args in rows}
+
+    def under_opencode(pid):
+        seen, cur = set(), pid
+        while cur and cur not in seen:
+            if is_opencode(args_of.get(cur, "")):
+                return True
+            seen.add(cur)
+            cur = parent.get(cur)
+        return False
+
+    hit = {pid for pid, _, args in rows
+           if pid not in protect and any(k in args for k in keys) and under_opencode(pid)}
+    hit |= {pid for pid in extra if pid not in protect}  # init orphans proven to be this task's (see reap_orphans)
+    # include descendants of matched shells (npm test -> node --test -> workers)
+    changed = True
+    while changed:
+        changed = False
+        for pid, ppid, _ in rows:
+            if ppid in hit and pid not in hit and pid not in protect:
+                hit.add(pid); changed = True
+    return hit
+
+
+def etime_seconds(text):
+    """ps etime ([[dd-]hh:]mm:ss) -> seconds; None when unparsable."""
+    m = re.fullmatch(r"(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)", text.strip())
+    if not m:
+        return None
+    d, h, mi, sec = (int(x or 0) for x in m.groups())
+    return ((d * 24 + h) * 60 + mi) * 60 + sec
+
+
+def first_call_at(p):
+    """Epoch seconds of the task's first model call, written once by run_role; None before any call."""
+    f = p["state"] / "first_call_at"
+    try:
+        return float(f.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def mark_first_call(p):
+    f = p["state"] / "first_call_at"
+    if not f.exists():
+        f.write_text(str(time.time()))
+
+
+def init_orphans(rows, roots, since, now=None):
+    """Pids of processes that (a) were handed to init (ppid 1), (b) were born at or after `since` and (c) either
+    have their cwd inside one of `roots` (checked with lsof) or name a root on their command line. Needs `since`:
+    without it nothing is selected, so a user's long-running `nohup` job started earlier is never touched."""
+    if since is None:
+        return set()
+    now = now or time.time()
+    named = {pid for pid, ppid, args in rows if ppid == 1 and any(r in args for r in roots)}
+    ages = {}
+    for line in sh(["ps", "-Ao", "pid=,ppid=,etime="], check=False).stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 3 and parts[0].isdigit() and parts[1] == "1":
+            secs = etime_seconds(parts[2])
+            if secs is not None and now - secs >= since - 1:  # etime has 1 s resolution
+                ages[int(parts[0])] = secs
+    young = set(ages)
+    if not young:
+        return set()
+    in_root = set()
+    out = sh(["lsof", "-a", "-d", "cwd", "-Fpn", "-p", ",".join(str(x) for x in sorted(young))], check=False).stdout
+    cur = None
+    reals = [str(r) for r in roots] + [os.path.realpath(str(r)) for r in roots]
+    for line in out.splitlines():
+        if line.startswith("p") and line[1:].isdigit():
+            cur = int(line[1:])
+        elif line.startswith("n") and cur is not None:
+            path = line[1:]
+            if any(path == r or path.startswith(r.rstrip("/") + "/") for r in reals):
+                in_root.add(cur)
+    return young & (named | in_root)
+
+
+_CMD_SECRET = re.compile(r"(?i)((?:token|secret|password|passwd|api[_-]?key|authorization)[\w-]*)(=|\s+)\S+")
+
+
+def describe_proc(pid, args):
+    """{pid, cmd} for the logs: command line cut to 200 chars with secret-looking values masked."""
+    return {"pid": pid, "cmd": _CMD_SECRET.sub(r"\1\2***", args)[:200]}
+
+
+def reap_orphans(paths, grace=3.0, since=None, report=None):
     """OpenCode runs shell commands through its long-lived pty daemon; they can keep running (or start late)
-    after `opencode run` returns and then race the gate or edit the worktree. Kill every process whose command
-    line names the task's worktree or hidden dir, children first. Returns how many were signalled."""
+    after `opencode run` returns and then race the gate or edit the worktree. Kill every process that names the
+    task's worktree or hidden dir AND runs under OpenCode (see reap_targets), children first, plus init orphans
+    born since `since` (the task's first hx call, see init_orphans): the user's own processes are not touched.
+    Returns how many were signalled; when `report` is a list, a {pid, cmd} entry per signalled process is
+    appended to it (for metrics)."""
     me = os.getpid()
     keys = [str(x) for x in paths]
     def scan():
@@ -206,14 +324,10 @@ def reap_orphans(paths, grace=3.0):
     protect, cur = set(), me
     while cur and cur not in protect:  # never signal hx itself or the shell that started it
         protect.add(cur); cur = parent.get(cur)
-    hit = {pid for pid, _, args in rows if pid not in protect and any(k in args for k in keys)}
-    # include descendants of matched shells (npm test -> node --test -> workers)
-    changed = True
-    while changed:
-        changed = False
-        for pid, ppid, _ in rows:
-            if ppid in hit and pid not in hit and pid not in protect:
-                hit.add(pid); changed = True
+    hit = reap_targets(rows, keys, protect, init_orphans(rows, keys, since))
+    if report is not None:
+        args_of = {pid: args for pid, _, args in rows}
+        report.extend(describe_proc(pid, args_of.get(pid, "")) for pid in sorted(hit))
     for sig in (15, 9):
         for pid in sorted(hit, reverse=True):
             try: os.kill(pid, sig)
@@ -363,6 +477,7 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
         # only plain "<role>-<n>.jsonl" files count; "<role>-<n>.attempt<k>.jsonl" retries must not shift n
         n = sum(1 for f in p["state"].glob(f"{role_name}-*.jsonl") if f.stem[len(role_name) + 1:].isdigit()) + 1
         (p["state"] / f"{role_name}-{n}.jsonl").write_text("")  # reserve the number
+    mark_first_call(p)
     t0 = time.time()
     raw, err, timeout = "", "", False
     limit = timeout_s or role.get("timeout_s") or CFG["timeout_s"]
@@ -380,13 +495,16 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
         (p["state"] / f"{role_name}-{n}.attempt{attempts}.jsonl").write_text(raw)
         time.sleep(CFG.get("rate_limit_wait_s", 90))
     (p["state"] / f"{role_name}-{n}.jsonl").write_text(raw)
-    reaped = reap_orphans([p["worktree"], p["hidden"]]) if reap else 0
+    reaped_procs = []
+    reaped = reap_orphans([p["worktree"], p["hidden"]], since=first_call_at(p), report=reaped_procs) if reap else 0
     final, tok, steps, tools, errors, secs, step_toks = parse_events(raw)
     m = re.search(r'"sessionID"\s*:\s*"([^"]+)"', raw)
     rec = {"task": task, "event": "call", "role": role_name, "n": n, "model": model, "seconds": secs,
            "session": m.group(1) if m else session, "resumed": bool(resume),
            "wall": round(time.time() - t0, 1), "steps": steps, "tool_calls": tools, "errors": errors,
            "timeout": timeout, "stalled": stalled, "attempts": attempts, "hidden_access": (not sees_hidden) and (str(p["hidden"]) in raw or "/.git/hx/" in raw), "tokens": tok, "go_cost_est": est_cost(model, step_toks), "price_v": 2, "reaped": reaped}
+    if reaped_procs:
+        rec["reaped_procs"] = reaped_procs
     if force:
         rec["forced"] = True
     with _lock:
@@ -492,9 +610,11 @@ def cmd_pair(a):
     for t in th: t.start()
     for t in th: t.join()
     p = task_paths(a.task)
-    reaped = reap_orphans([p["worktree"], p["hidden"]])  # only after both roles are done
+    reaped_procs = []
+    reaped = reap_orphans([p["worktree"], p["hidden"]], since=first_call_at(p), report=reaped_procs)  # only after both roles are done
     if reaped:
         print(f"[hx] pair: stopped {reaped} leftover processes")
+        metric({"task": a.task, "event": "reap", "where": "pair", "reaped_procs": reaped_procs})
     for role in ("tester", "worker"):
         if role in res:
             print(f"===== {role.upper()}\n{res[role][1]}\n{res[role][2]}\n")
@@ -658,7 +778,8 @@ def cmd_gate(a):
         sys.exit("hx: gate needs --test or --hidden-cmd (or --no-tests to gate without tests)")
     if not allow:
         sys.exit("hx: gate needs --allow GLOBS (use --allow '**' to allow every path)")
-    reaped = reap_orphans([wt, p["hidden"]])
+    gate_reaped = []
+    reaped = reap_orphans([wt, p["hidden"]], since=first_call_at(p), report=gate_reaped)
     if reaped:
         print(f"[hx] gate: stopped {reaped} leftover processes in the worktree before testing")
     files = changed_files(wt, base)
@@ -685,7 +806,7 @@ def cmd_gate(a):
                 break
             if attempt + 1 < tries:
                 print(f"[hx] gate: {label} failed (attempt {attempt + 1}); retrying once (flaky timing tests)")
-                reap_orphans([wt, p["hidden"]])
+                reap_orphans([wt, p["hidden"]], since=first_call_at(p), report=gate_reaped)
         failure = p["state"] / ("hidden_failure.txt" if label == "hidden" else "visible_failure.txt")
         if timed_out:
             results[label] = "timeout"
@@ -710,6 +831,8 @@ def cmd_gate(a):
             failure.write_text(text)
     ok = not out_of_scope and not touched_protected and not fails
     results["gate"] = "PASS" if ok else "FAIL"
+    if gate_reaped:  # pid + command line of every process the gate stopped, for the audit trail
+        results["reaped_procs"] = gate_reaped
     gate_json = {"gate": results["gate"], "fingerprint": tree_fingerprint(wt, base)}
     if no_tests:  # the result JSON records that the gate ran without any test command
         gate_json["no_tests"] = True
