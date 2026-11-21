@@ -11,7 +11,8 @@
                                                    worker_feedback.txt (rules only, no test code)
   hx.py gate   <task> --test CMD [--hidden-cmd CMD] --allow GLOBS [--protect GLOBS] [--no-tests]
   hx.py diff   <task> [--all]                      write the diff for the reviewer (current phase; --all = whole task)
-  hx.py commit <task> -m MSG --review ONAY [--phase N] [--next TEXT]
+  hx.py review <task> <reviewer_output.md>         record the blind reviewer's ONAY/RED with the diff's sha256
+  hx.py commit <task> -m MSG [--phase N] [--next TEXT]   needs a recorded ONAY for the current diff
                                                    commit an approved phase in the worktree; next phase diffs from here;
                                                    writes <state>/handoff.md (resume point after context compaction)
   hx.py note   <task> key=value ...                record a decision (verdict, solved_by, ...)
@@ -736,12 +737,52 @@ def tree_fingerprint(wt, base):
     return hashlib.sha256(sh(["git", "diff", "--binary", base], cwd=wt).stdout.encode()).hexdigest()
 
 
+def current_diff(wt, base):
+    sh(["git", "add", "-N", "."], cwd=wt, check=False)  # include new files in diff without staging content
+    return sh(["git", "diff", base], cwd=wt).stdout
+
+
+def diff_sha(diff):
+    import hashlib
+    return hashlib.sha256(diff.encode()).hexdigest()
+
+
+def parse_review_verdict(text):
+    """(verdict, findings) from the reviewer's output. ONAY only when the whole output is the single line ONAY
+    (the reviewer template's contract); everything else, including ONAY followed by findings, is RED."""
+    lines = [l.strip().strip("*`#> ").strip() for l in text.splitlines() if l.strip()]
+    if len(lines) == 1 and lines[0].rstrip(".!").upper() == "ONAY":
+        return "ONAY", []
+    return "RED", [l for l in lines if l.rstrip(".!").upper() not in ("RED", "ONAY")]
+
+
+def cmd_review(a):
+    """Record the blind reviewer's verdict next to the sha256 of the diff it reviewed (review.diff, from `hx diff`).
+    `hx commit` accepts only an ONAY whose diff hash still equals the current tree's diff."""
+    p = task_paths(a.task)
+    dp = p["state"] / "review.diff"
+    if not dp.exists():
+        sys.exit("hx: no review.diff; run hx diff first")
+    src = Path(a.output)
+    if not src.exists():
+        sys.exit(f"hx: reviewer output not found: {src}")
+    text = src.read_text(encoding="utf-8", errors="replace")
+    if not text.strip():
+        sys.exit("hx: reviewer output is empty")
+    verdict, findings = parse_review_verdict(text)
+    rec = {"verdict": verdict, "findings": len(findings), "diff_sha256": diff_sha(dp.read_text()),
+           "reviewed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    (p["state"] / "review.json").write_text(json.dumps(rec))
+    metric({"task": a.task, "event": "review", "verdict": verdict, "findings": len(findings)})
+    print(f"[hx] review recorded: {verdict}" + (f" ({len(findings)} findings)" if findings else ""))
+    sys.exit(0 if verdict == "ONAY" else 1)
+
+
 def cmd_diff(a):
     p = task_paths(a.task)
     wt = p["worktree"]
     base = (json.loads(p["meta"].read_text()).get("task_base") or p["base"]) if a.all else p["base"]
-    sh(["git", "add", "-N", "."], cwd=wt, check=False)  # include new files in diff without staging content
-    diff = sh(["git", "diff", base], cwd=wt).stdout
+    diff = current_diff(wt, base)
     stat = sh(["git", "diff", "--stat", base], cwd=wt).stdout
     out = p["state"] / "review.diff"
     out.write_text(diff)
@@ -753,7 +794,7 @@ def cmd_commit(a):
     blind review said ONAY. The next phase is gated and diffed against this commit."""
     p = task_paths(a.task)
     wt, base = p["worktree"], p["base"]
-    if a.review != "ONAY":
+    if a.review not in (None, "ONAY"):
         sys.exit("hx: commit needs --review ONAY (blind review approval)")
     gp = p["state"] / "last_gate.json"
     g = json.loads(gp.read_text()) if gp.exists() else {}
@@ -761,6 +802,14 @@ def cmd_commit(a):
         sys.exit("hx: last gate did not pass; run hx gate first")
     if g.get("fingerprint") != tree_fingerprint(wt, base):
         sys.exit("hx: worktree changed after the last gate; run hx gate again")
+    rp = p["state"] / "review.json"
+    if not rp.exists():
+        sys.exit("hx: no recorded review; run hx diff, review blind, then hx review <task> <reviewer_output.md>")
+    rv = json.loads(rp.read_text())
+    if rv.get("verdict") != "ONAY":
+        sys.exit("hx: recorded review is not ONAY")
+    if rv.get("diff_sha256") != diff_sha(current_diff(wt, base)):
+        sys.exit("hx: recorded review belongs to an older diff; run hx diff and review again")
     sh(["git", "add", "-A"], cwd=wt)
     if not sh(["git", "diff", "--cached", "--name-only"], cwd=wt).stdout.strip():
         sys.exit("hx: nothing to commit")
@@ -774,6 +823,7 @@ def cmd_commit(a):
     meta["phases"] = meta.get("phases", []) + [{"phase": a.phase, "commit": head, "msg": a.m.splitlines()[0]}]
     p["meta"].write_text(json.dumps(meta))
     gp.unlink()
+    rp.unlink(missing_ok=True)
     metric({"task": a.task, "event": "phase_commit", "phase": a.phase, "commit": head})
     done = "\n".join(f"- faz {x['phase'] or '?'}: {x['commit'][:9]} {x['msg']}" for x in meta["phases"])
     hand = (f"# {a.task} — devir notu\n\nworktree: {wt}\nbranch: {meta['branch']}\ntask_base: {meta['task_base']}\n"
@@ -842,7 +892,9 @@ def main():
     s.add_argument("--retry", type=int, default=CFG.get("gate_retry", 1), help="re-run the visible test command this many times on failure")
     s.add_argument("--gate-timeout", type=int, default=CFG.get("gate_timeout_s", 1800)); s.set_defaults(fn=cmd_gate)
     s = sp.add_parser("diff"); s.add_argument("task"); s.add_argument("--all", action="store_true", help="whole task, all phases"); s.set_defaults(fn=cmd_diff)
-    s = sp.add_parser("commit"); s.add_argument("task"); s.add_argument("-m", required=True); s.add_argument("--review", required=True)
+    s = sp.add_parser("review"); s.add_argument("task"); s.add_argument("output", help="file holding the reviewer's output"); s.set_defaults(fn=cmd_review)
+    s = sp.add_parser("commit"); s.add_argument("task"); s.add_argument("-m", required=True)
+    s.add_argument("--review", help="legacy and optional; the commit is gated on the review.json that `hx review` writes")
     s.add_argument("--phase"); s.add_argument("--next", help="what the next phase is (goes into handoff.md)"); s.set_defaults(fn=cmd_commit)
     s = sp.add_parser("note"); s.add_argument("task"); s.add_argument("kv", nargs="+"); s.set_defaults(fn=cmd_note)
     s = sp.add_parser("report"); s.set_defaults(fn=cmd_report)

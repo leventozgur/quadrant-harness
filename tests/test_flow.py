@@ -105,6 +105,76 @@ class FlowTest(unittest.TestCase):
                 hx.cmd_commit(NS(**args))
         return cm.exception.code
 
+    def record_review(self, text="ONAY\n", task="HX-T1"):
+        """hx diff, then hx review with `text` as the reviewer output. Returns the exit code of cmd_review."""
+        p = hx.task_paths(task)
+        with contextlib.redirect_stdout(io.StringIO()):
+            hx.cmd_diff(NS(task=task, all=False))
+        out = p["state"] / "reviewer_output.md"
+        out.write_text(text, encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit) as cm:
+                hx.cmd_review(NS(task=task, output=str(out)))
+        return cm.exception.code
+
+    # ---------------------------------------------------------------- HX-29 review record
+    def test_review_records_onay_with_the_diff_hash(self):
+        _, p = self.new_task()
+        (p["worktree"] / "impl.py").write_text("v1\n")
+        self.assertEqual(0, self.record_review("ONAY\n"))
+        rec = json.loads((p["state"] / "review.json").read_text())
+        self.assertEqual("ONAY", rec["verdict"])
+        self.assertEqual(hx.diff_sha((p["state"] / "review.diff").read_text()), rec["diff_sha256"])
+
+    def test_review_findings_are_red_and_commit_refuses(self):
+        _, p = self.new_task()
+        (p["worktree"] / "impl.py").write_text("v1\n")
+        self.gate()
+        self.assertEqual(1, self.record_review("impl.py:1 — sorun — düzelt\n"))
+        self.assertEqual("RED", json.loads((p["state"] / "review.json").read_text())["verdict"])
+        self.assertIn("not ONAY", str(self.commit(review=None)))
+
+    def test_onay_followed_by_findings_is_red(self):
+        self.assertEqual(("RED", ["impl.py:1 — sorun"]), hx.parse_review_verdict("ONAY\nimpl.py:1 — sorun\n"))
+        self.assertEqual(("ONAY", []), hx.parse_review_verdict("\n**ONAY**\n"))
+        self.assertEqual(("RED", []), hx.parse_review_verdict("RED\n"))
+
+    def test_commit_refuses_without_a_recorded_review(self):
+        _, p = self.new_task()
+        (p["worktree"] / "impl.py").write_text("v1\n")
+        self.gate()
+        self.assertIn("no recorded review", str(self.commit(review="ONAY")))
+
+    def test_commit_refuses_an_onay_given_for_an_older_diff(self):
+        _, p = self.new_task()
+        wt = p["worktree"]
+        (wt / "impl.py").write_text("v1\n")
+        self.assertEqual(0, self.record_review())
+        (wt / "impl.py").write_text("v2\n")  # tree changes after the ONAY, then gets gated again
+        self.gate()
+        self.assertIn("older diff", str(self.commit(review="ONAY")))
+
+    def test_review_needs_a_diff_and_a_reviewer_output(self):
+        _, p = self.new_task()
+        with self.assertRaises(SystemExit) as cm:
+            hx.cmd_review(NS(task="HX-T1", output=str(p["state"] / "none.md")))
+        self.assertIn("hx diff", str(cm.exception.code))
+        (p["worktree"] / "impl.py").write_text("v1\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            hx.cmd_diff(NS(task="HX-T1", all=False))
+        with self.assertRaises(SystemExit) as cm:
+            hx.cmd_review(NS(task="HX-T1", output=str(p["state"] / "none.md")))
+        self.assertIn("not found", str(cm.exception.code))
+
+    def test_review_record_is_consumed_by_the_commit(self):
+        _, p = self.new_task()
+        (p["worktree"] / "impl.py").write_text("v1\n")
+        self.gate()
+        self.assertEqual(0, self.record_review())
+        with contextlib.redirect_stdout(io.StringIO()):
+            hx.cmd_commit(NS(task="HX-T1", m="p", review=None, phase="1", next=None))
+        self.assertFalse((p["state"] / "review.json").exists())
+
     # ---------------------------------------------------------------- new
     def test_cmd_new_creates_worktree_hidden_and_task_json(self):
         repo = self.stack.enter_context(temp_repo())
@@ -256,8 +326,9 @@ class FlowTest(unittest.TestCase):
         wt = p["worktree"]
         (wt / "impl.py").write_text("v1\n")
         self.gate()
+        self.assertEqual(0, self.record_review())
         with contextlib.redirect_stdout(io.StringIO()):
-            hx.cmd_commit(NS(task="HX-T1", m="phase one", review="ONAY", phase="1",
+            hx.cmd_commit(NS(task="HX-T1", m="phase one", review=None, phase="1",
                              next="faz 2: testler"))
         self.assertEqual("phase one", git(wt, "log", "-1", "--format=%s").strip())
         self.assertIn("impl.py", git(wt, "show", "--name-only", "--format=", "HEAD").split())
