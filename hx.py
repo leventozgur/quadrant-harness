@@ -64,6 +64,38 @@ def metric(rec):
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
+# ------------------------------------------------------------------ child environment
+# Names that look like credentials are hidden from model processes and gate commands: the model's shell
+# reads `opencode run`'s environment, so a token in the shell would otherwise reach the model and its prompt.
+_SECRET_HINTS = ("TOKEN", "SECRET", "PASSWORD", "PASSWD", "PASSPHRASE", "API_KEY", "APIKEY",
+                 "PRIVATE_KEY", "CREDENTIAL", "ACCESS_KEY", "AUTH", "COOKIE", "SESSION_KEY")
+_SECRET_PREFIXES = ("AWS_", "GITHUB_", "GH_", "AZURE_", "GOOGLE_", "GCP_", "OPENAI_", "ANTHROPIC_",
+                    "NPM_", "DOCKER_")
+_ENV_ALWAYS_KEEP = {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "TERM", "PWD"}
+
+
+def env_hidden(name):
+    """True when an environment variable name looks secret (case-insensitive substring/prefix test)."""
+    up = name.upper()
+    if up.startswith("OPENCODE_") or up in _ENV_ALWAYS_KEEP or up.startswith("LC_"):
+        return False
+    if any(h in up for h in _SECRET_HINTS) or up.startswith(_SECRET_PREFIXES):
+        return True
+    return "DATABASE_URL" in up or "CONNECTION_STRING" in up
+
+
+def safe_env(base, keep=()):
+    """Copy of `base` without secret-looking names; OPENCODE_*, core shell names and `keep` (exact names) stay."""
+    keep = set(keep or ())
+    return {k: v for k, v in base.items() if k in keep or not env_hidden(k)}
+
+
+def child_env(base, keep=()):
+    """(filtered env, sorted names of the dropped variables). Values are never logged."""
+    env = safe_env(base, keep)
+    return env, sorted(set(base) - set(env))
+
+
 # ------------------------------------------------------------------ new
 def cmd_new(a):
     p = task_paths(a.task)
@@ -357,7 +389,9 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
     if read_only or role.get("read_only"):
         args += ["--agent", "plan"]
     args.append(prompt)
-    env = dict(os.environ, PWD=str(cwd))
+    base_env = dict(os.environ)
+    env, env_dropped = child_env(base_env, CFG.get("env_passthrough") or [])
+    env["PWD"] = str(cwd)  # added after filtering so the role's cwd is never dropped
     with _lock:
         # only plain "<role>-<n>.jsonl" files count; "<role>-<n>.attempt<k>.jsonl" retries must not shift n
         n = sum(1 for f in p["state"].glob(f"{role_name}-*.jsonl") if f.stem[len(role_name) + 1:].isdigit()) + 1
@@ -385,7 +419,7 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
     rec = {"task": task, "event": "call", "role": role_name, "n": n, "model": model, "seconds": secs,
            "session": m.group(1) if m else session, "resumed": bool(resume),
            "wall": round(time.time() - t0, 1), "steps": steps, "tool_calls": tools, "errors": errors,
-           "timeout": timeout, "stalled": stalled, "attempts": attempts, "hidden_access": (not sees_hidden) and (str(p["hidden"]) in raw or "/.git/hx/" in raw), "tokens": tok, "go_cost_est": est_cost(model, step_toks), "price_v": 2, "reaped": reaped}
+           "timeout": timeout, "stalled": stalled, "attempts": attempts, "hidden_access": (not sees_hidden) and (str(p["hidden"]) in raw or "/.git/hx/" in raw), "tokens": tok, "go_cost_est": est_cost(model, step_toks), "price_v": 2, "reaped": reaped, "env_dropped": env_dropped}
     if force:
         rec["forced"] = True
     with _lock:
@@ -666,7 +700,9 @@ def cmd_gate(a):
     results = {"changed": files, "out_of_scope": out_of_scope, "protected_touched": touched_protected}
     if no_tests:
         results["no_tests"] = True
-    env = dict(os.environ, PYTHONPATH=str(wt) + os.pathsep + os.environ.get("PYTHONPATH", ""))
+    env, env_dropped = child_env(dict(os.environ), CFG.get("env_passthrough") or [])
+    env["PYTHONPATH"] = str(wt) + os.pathsep + env.get("PYTHONPATH", "")  # appended after filtering
+    results["env_dropped"] = env_dropped
     fails = []
     for f in ("visible_failure.txt", "hidden_failure.txt"):
         (p["state"] / f).unlink(missing_ok=True)
@@ -709,7 +745,7 @@ def cmd_gate(a):
             failure.write_text(text)
     ok = not out_of_scope and not touched_protected and not fails
     results["gate"] = "PASS" if ok else "FAIL"
-    gate_json = {"gate": results["gate"], "fingerprint": tree_fingerprint(wt, base)}
+    gate_json = {"gate": results["gate"], "fingerprint": tree_fingerprint(wt, base), "env_dropped": env_dropped}
     if no_tests:  # the result JSON records that the gate ran without any test command
         gate_json["no_tests"] = True
     (p["state"] / "last_gate.json").write_text(json.dumps(gate_json))
