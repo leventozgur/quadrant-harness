@@ -34,8 +34,10 @@ SECRETS = {
     "GCP_FAKE": "hx-fake-gcp-value",
     "OPENAI_FAKE": "hx-fake-openai-value",
     "ANTHROPIC_FAKE": "hx-fake-anthropic-value",
-    "NPM_FAKE": "hx-fake-npm-value",
-    "DOCKER_FAKE": "hx-fake-docker-value",
+    "DOCKER_AUTH_CONFIG": "hx-fake-docker-auth-value",
+    "npm_config__auth": "hx-fake-npm-auth-value",
+    "NPM_TOKEN": "hx-fake-npm-token-value",
+    "DOCKER_PASSWORD": "hx-fake-docker-password-value",
     "HX_FAKE_DATABASE_URL": "hx-fake-db-value",
     "HX_FAKE_CONNECTION_STRING": "hx-fake-conn-value",
 }
@@ -55,6 +57,12 @@ KEPT = {
     "OPENCODE_CONFIG_CONTENT": "hx-fake-opencode-config",
     "OPENCODE_API_KEY": "hx-fake-opencode-key",
     "HX_FAKE_PLAIN": "hx-fake-plain-value",
+    "DOCKER_HOST": "hx-fake-docker-host",
+    "npm_config_registry": "hx-fake-registry",
+    "npm_config_cache": "hx-fake-npm-cache",
+    "NPM_CONFIG_USERCONFIG": "hx-fake-npmrc-path",
+    "DOCKER_CONFIG": "hx-fake-docker-config-dir",
+    "DOCKER_BUILDKIT": "1",
     "SSH_AUTH_SOCK": "hx-fake-ssh-sock",  # socket path needed by git over ssh in tests; not a secret value
 }
 

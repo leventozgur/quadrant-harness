@@ -69,8 +69,11 @@ def metric(rec):
 # reads `opencode run`'s environment, so a token in the shell would otherwise reach the model and its prompt.
 _SECRET_HINTS = ("TOKEN", "SECRET", "PASSWORD", "PASSWD", "PASSPHRASE", "API_KEY", "APIKEY",
                  "PRIVATE_KEY", "CREDENTIAL", "ACCESS_KEY", "AUTHORIZATION", "COOKIE", "SESSION_KEY")
-_SECRET_PREFIXES = ("AWS_", "GITHUB_", "GH_", "AZURE_", "GOOGLE_", "GCP_", "OPENAI_", "ANTHROPIC_",
-                    "NPM_", "DOCKER_")
+_SECRET_PREFIXES = ("AWS_", "GITHUB_", "GH_", "AZURE_", "GOOGLE_", "GCP_", "OPENAI_", "ANTHROPIC_")
+# NPM_*/npm_config_* and DOCKER_* are ordinary tool configuration (registry, cache, DOCKER_HOST) and stay; only the
+# known credential carriers are hidden: names containing TOKEN/PASSWORD/... already match the hints above.
+_SECRET_NAMES = ("DOCKER_AUTH_CONFIG",)
+_SECRET_SUFFIXES = ("_CONFIG__AUTH",)  # npm_config__auth (base64 user:password)
 _ENV_ALWAYS_KEEP = {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "TERM", "PWD"}
 
 
@@ -79,6 +82,8 @@ def env_hidden(name):
     up = name.upper()
     if up.startswith("OPENCODE_") or up in _ENV_ALWAYS_KEEP or up.startswith("LC_"):
         return False
+    if up in _SECRET_NAMES or up.endswith(_SECRET_SUFFIXES):
+        return True
     if any(h in up for h in _SECRET_HINTS) or up.startswith(_SECRET_PREFIXES):
         return True
     return "DATABASE_URL" in up or "CONNECTION_STRING" in up
