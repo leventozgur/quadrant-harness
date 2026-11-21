@@ -139,6 +139,28 @@ class CleanTest(unittest.TestCase):
         self.assertNotIn(str(self.wt), git(self.repo, "worktree", "list"))
         self.assertNotIn("hx/HX-C1", branches(self.repo))
 
+    def test_reap_orphans_runs_before_the_worktree_is_removed_and_is_logged(self):
+        order = []
+        real_sh = hx.sh
+
+        def fake_reap(paths, grace=3.0, since=None, report=None):
+            order.append(("reap", self.wt.exists()))
+            report.append({"pid": 77, "cmd": "node --test"})
+            return 1
+
+        with mock.patch.object(hx, "reap_orphans", fake_reap):
+            code, out = self.clean()
+        self.assertIsNone(code, out)
+        self.assertEqual([("reap", True)], order)  # the worktree still existed when the reaper ran
+        self.assertIn("stopped 1 leftover", out)
+        self.assertFalse(self.wt.exists())
+        self.assertIn('"reaped_procs"', (hx.state_dir() / "metrics.jsonl").read_text())
+
+    def test_dry_run_does_not_reap(self):
+        with mock.patch.object(hx, "reap_orphans", side_effect=AssertionError("reaped")):
+            code, _ = self.clean(dry_run=True)
+        self.assertIsNone(code)
+
     def test_clean_is_recorded_in_metrics(self):
         self.clean()
         text = (hx.state_dir() / "metrics.jsonl").read_text()

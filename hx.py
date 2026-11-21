@@ -141,6 +141,11 @@ def cmd_clean(a):
                 sys.exit("hx: clean cancelled")
         else:
             sys.exit("hx: refusing to remove unsaved work without confirmation; rerun with --yes")
+    reaped = []
+    if wt.exists() and wt_known:  # stop leftover task processes first so nothing writes into the tree being removed
+        reap_orphans([wt, p["hidden"]], since=first_call_at(p), report=reaped)
+    if reaped:
+        print(f"[hx] stopped {len(reaped)} leftover processes before removing the worktree")
     if wt.exists() and wt_known:
         sh(["git", "worktree", "remove", "--force", str(wt)], cwd=root)
     sh(["git", "worktree", "prune"], cwd=root)
@@ -152,7 +157,7 @@ def cmd_clean(a):
         if not deleted:
             print(f"[hx] branch {branch} not deleted: {(r.stderr or r.stdout).strip()[:200]}")
     metric({"task": a.task, "event": "clean", "worktree_removed": not wt.exists(), "branch_deleted": deleted,
-            "forced": bool(risks)})
+            "forced": bool(risks), **({"reaped_procs": reaped} if reaped else {})})
     print(f"[hx] removed worktree{' and branch' if deleted else ''}; state kept at {p['state']}")
 
 
