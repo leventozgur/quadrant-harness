@@ -711,9 +711,88 @@ def _nul_split(raw):
     return [x for x in raw.split("\0") if x]
 
 
+def _ignore_files(wt, rel):
+    """Ignore files that can apply to `rel` (root and nested .gitignore, info/exclude, core.excludesFile)."""
+    wt = Path(wt)
+    files = [wt / ".gitignore"]
+    cur = wt
+    for part in Path(rel).parts[:-1]:
+        cur = cur / part
+        files.append(cur / ".gitignore")
+    common = sh(["git", "rev-parse", "--git-common-dir"], cwd=wt, check=False).stdout.strip()
+    if common:
+        files.append((wt / common) / "info" / "exclude")
+    ex = sh(["git", "config", "core.excludesFile"], cwd=wt, check=False).stdout.strip()
+    if ex:
+        files.append(Path(ex).expanduser())
+    return files
+
+
+def ignored_as_directory(wt, rel):
+    """True when `rel` matches a directory ignore rule such as `node_modules/`. Git matches those only against real
+    directories, so a symlink to a directory is listed as untracked even though the user ignored the name; this
+    treats the symlink like the directory it points to. Approximation of gitignore (last matching rule wins;
+    `/anchored`, `dir/` and glob rules; no `**` inside the rule); it only runs for symlinks to directories."""
+    import fnmatch
+    rel = rel.rstrip("/")
+    name = os.path.basename(rel)
+    verdict = False
+    for f in _ignore_files(wt, rel):
+        try:
+            lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        base = os.path.relpath(f.parent, wt) if f.name == ".gitignore" else "."
+        local = rel if base in (".", "") else rel[len(base) + 1:] if rel.startswith(base + "/") else None
+        if local is None:
+            continue
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            neg = line.startswith("!")
+            pat = line[1:] if neg else line
+            dir_only = pat.endswith("/")
+            pat = pat.rstrip("/")
+            anchored = pat.startswith("/") or "/" in pat
+            pat = pat.lstrip("/")
+            hit = fnmatch.fnmatchcase(local, pat) if anchored else fnmatch.fnmatchcase(os.path.basename(local), pat)
+            if hit:
+                verdict = not neg
+    return verdict
+
+
+def ignored_links(wt):
+    """Symlinks to directories that an ignore rule `name/` covers (see ignored_as_directory). Besides untracked
+    ones this includes entries an older `git add -N .` already put into the index as intent-to-add: those no longer
+    show up in `ls-files --others`, but they are still not in HEAD."""
+    untracked = _nul_split(sh(["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=wt).stdout)
+    in_index = _nul_split(sh(["git", "diff", "--name-only", "-z"], cwd=wt, check=False).stdout)
+    out = [f for f in untracked if _is_dir_link(wt, f) and ignored_as_directory(wt, f)]
+    for f in in_index:
+        if f not in out and _is_dir_link(wt, f) and ignored_as_directory(wt, f) \
+                and sh(["git", "cat-file", "-e", f"HEAD:{f}"], cwd=wt, check=False).returncode != 0:
+            out.append(f)  # intent-to-add: in the index, not in HEAD
+    return out
+
+
+def _is_dir_link(wt, f):
+    path = os.path.join(wt, f)
+    return os.path.islink(path) and os.path.isdir(path)
+
+
+def link_excludes(wt):
+    """git pathspec tail that leaves those symlinks out of `git add` / `git diff` (git itself never ignores them)."""
+    return [":(exclude)" + f for f in ignored_links(wt)]
+
+
 def changed_files(wt, base):
     tracked = _nul_split(sh(["git", "diff", "--name-only", "-z", base], cwd=wt).stdout)
     untracked = _nul_split(sh(["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=wt).stdout)
+    # a symlink to a directory whose name an ignore rule `name/` covers is as ignored as the directory itself
+    hidden = set(ignored_links(wt))
+    untracked = [f for f in untracked if f not in hidden]
+    tracked = [f for f in tracked if f not in hidden]
     return sorted(set(tracked + untracked))
 
 
@@ -907,13 +986,17 @@ def cmd_gate(a):
 # ------------------------------------------------------------------ diff / commit / note / report
 def tree_fingerprint(wt, base):
     import hashlib
-    sh(["git", "add", "-N", "."], cwd=wt, check=False)
-    return hashlib.sha256(sh(["git", "diff", "--binary", base], cwd=wt).stdout.encode()).hexdigest()
+    ex = link_excludes(wt)
+    sh(["git", "add", "-N", ".", *ex], cwd=wt, check=False)
+    return hashlib.sha256(sh(["git", "diff", "--binary", base, "--", ".", *ex], cwd=wt).stdout.encode()).hexdigest()
 
 
 def current_diff(wt, base):
-    sh(["git", "add", "-N", "."], cwd=wt, check=False)  # include new files in diff without staging content
-    return sh(["git", "diff", base], cwd=wt).stdout
+    """The diff hx shows the reviewer and hashes for the review record; symlinks to ignored directories are left out
+    (see ignored_links), so hx diff, hx review and hx commit always agree on it."""
+    ex = link_excludes(wt)
+    sh(["git", "add", "-N", ".", *ex], cwd=wt, check=False)  # include new files in diff without staging content
+    return sh(["git", "diff", base, "--", ".", *ex], cwd=wt).stdout
 
 
 def diff_sha(diff):
@@ -962,7 +1045,7 @@ def cmd_diff(a):
     wt = p["worktree"]
     base = (json.loads(p["meta"].read_text()).get("task_base") or p["base"]) if a.all else p["base"]
     diff = current_diff(wt, base)
-    stat = sh(["git", "diff", "--stat", base], cwd=wt).stdout
+    stat = sh(["git", "diff", "--stat", base, "--", ".", *link_excludes(wt)], cwd=wt).stdout
     out = p["state"] / "review.diff"
     out.write_text(diff)
     (p["state"] / "review.diff.json").write_text(json.dumps({"base": base, "all": bool(a.all)}))
@@ -994,7 +1077,7 @@ def cmd_commit(a):
                      f"{' (hx diff --all?)' if rv.get('all') else ''}, but this commit's diff starts at {str(base)[:9]}; "
                      "run hx diff (without --all) and review that diff again")
         sys.exit("hx: recorded review belongs to an older diff; run hx diff and review again")
-    sh(["git", "add", "-A"], cwd=wt)
+    sh(["git", "add", "-A", "--", ".", *link_excludes(wt)], cwd=wt)
     if not sh(["git", "diff", "--cached", "--name-only"], cwd=wt).stdout.strip():
         sys.exit("hx: nothing to commit")
     trailer = CFG.get("commit_trailer", "")
