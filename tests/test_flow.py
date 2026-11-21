@@ -159,6 +159,43 @@ class FlowTest(unittest.TestCase):
         self.gate()
         self.assertIn("older diff", str(self.commit(review="ONAY")))
 
+    def test_review_json_records_the_diff_base_and_commit_hints_at_diff_all(self):
+        _, p = self.new_task()
+        wt = p["worktree"]
+        (wt / "impl.py").write_text("v1\n")
+        self.gate()
+        with contextlib.redirect_stdout(io.StringIO()):
+            hx.cmd_diff(NS(task="HX-T1", all=True))
+        out = p["state"] / "reviewer_output.md"
+        out.write_text("ONAY\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                hx.cmd_review(NS(task="HX-T1", output=str(out)))
+        rec = json.loads((p["state"] / "review.json").read_text())
+        self.assertTrue(rec["all"])
+        self.assertEqual(p["base"], rec["base"])
+        # same task_base here, so the sha matches and the commit is accepted; forge a different base to see the hint
+        rec["base"] = "0" * 40
+        rec["diff_sha256"] = "stale"
+        (p["state"] / "review.json").write_text(json.dumps(rec))
+        msg = str(self.commit(review=None))
+        self.assertIn("000000000", msg)
+        self.assertIn("--all", msg)
+        self.assertIn("without --all", msg)
+
+    def test_review_without_base_info_keeps_the_generic_older_diff_message(self):
+        _, p = self.new_task()
+        (p["worktree"] / "impl.py").write_text("v1\n")
+        self.gate()
+        self.assertEqual(0, self.record_review())
+        rec = json.loads((p["state"] / "review.json").read_text())
+        self.assertEqual(p["base"], rec["base"])
+        self.assertFalse(rec["all"])
+        rec["base"] = None
+        rec["diff_sha256"] = "stale"
+        (p["state"] / "review.json").write_text(json.dumps(rec))
+        self.assertIn("older diff", str(self.commit(review=None)))
+
     def test_review_needs_a_diff_and_a_reviewer_output(self):
         _, p = self.new_task()
         with self.assertRaises(SystemExit) as cm:

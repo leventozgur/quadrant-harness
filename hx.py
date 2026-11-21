@@ -770,7 +770,12 @@ def cmd_review(a):
     if not text.strip():
         sys.exit("hx: reviewer output is empty")
     verdict, findings = parse_review_verdict(text)
+    try:
+        dmeta = json.loads((p["state"] / "review.diff.json").read_text())
+    except (OSError, ValueError):
+        dmeta = {}
     rec = {"verdict": verdict, "findings": len(findings), "diff_sha256": diff_sha(dp.read_text()),
+           "base": dmeta.get("base"), "all": dmeta.get("all"),
            "reviewed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     (p["state"] / "review.json").write_text(json.dumps(rec))
     metric({"task": a.task, "event": "review", "verdict": verdict, "findings": len(findings)})
@@ -786,6 +791,7 @@ def cmd_diff(a):
     stat = sh(["git", "diff", "--stat", base], cwd=wt).stdout
     out = p["state"] / "review.diff"
     out.write_text(diff)
+    (p["state"] / "review.diff.json").write_text(json.dumps({"base": base, "all": bool(a.all)}))
     print(f"{out}\n{stat.strip()}\nlines={len(diff.splitlines())}")
 
 
@@ -809,6 +815,10 @@ def cmd_commit(a):
     if rv.get("verdict") != "ONAY":
         sys.exit("hx: recorded review is not ONAY")
     if rv.get("diff_sha256") != diff_sha(current_diff(wt, base)):
+        if rv.get("base") and rv.get("base") != base:
+            sys.exit(f"hx: recorded review covers the diff from {str(rv['base'])[:9]}"
+                     f"{' (hx diff --all?)' if rv.get('all') else ''}, but this commit's diff starts at {str(base)[:9]}; "
+                     "run hx diff (without --all) and review that diff again")
         sys.exit("hx: recorded review belongs to an older diff; run hx diff and review again")
     sh(["git", "add", "-A"], cwd=wt)
     if not sh(["git", "diff", "--cached", "--name-only"], cwd=wt).stdout.strip():
