@@ -168,5 +168,75 @@ class CanaryTest(Base):
         self.assertFalse(self.call_records()[-1]["hidden_access"])
 
 
+class IsolationAgentTest(Base):
+    """HX-30 (a)/(d): opt-in per-role OpenCode agent that fences the hidden dir (rules verified on OpenCode v2.3.0
+    with real canary runs; recorded in the notes)."""
+
+    def perms(self, kind):
+        name, cfg = hx.isolation_agent(kind, self.p["hidden"], hx.state_dir())
+        self.assertEqual(f"hx-{kind}", name)
+        return cfg["agents"][name]["permissions"]
+
+    def test_worker_agent_denies_external_directory_and_read_for_hidden_and_state(self):
+        perms = self.perms("worker")
+        self.assertEqual({"action": "*", "resource": "*", "effect": "allow"}, perms[0])  # broad rule first
+        for action in ("external_directory", "read"):
+            for root in (str(self.p["hidden"]), str(hx.state_dir())):
+                for suffix in ("", "/*", "/**"):
+                    self.assertIn({"action": action, "resource": os.path.realpath(root) + suffix, "effect": "deny"}, perms)
+        self.assertTrue(all(r["effect"] == "deny" for r in perms[1:]))  # last match wins: no allow after the denies
+
+    def test_tester_agent_allows_edits_only_inside_the_hidden_dir(self):
+        perms = self.perms("tester")
+        self.assertEqual({"action": "edit", "resource": "*", "effect": "deny"}, perms[1])
+        allowed = [r["resource"] for r in perms[2:]]
+        self.assertTrue(allowed and all(r["effect"] == "allow" and r["action"] == "edit" for r in perms[2:]))
+        self.assertTrue(all(x.startswith((str(self.p["hidden"]), os.path.realpath(str(self.p["hidden"])))) for x in allowed))
+        self.assertFalse(any("/.git/hx/" in x and not x.startswith(str(self.p["hidden"])) and "hidden" not in x for x in allowed))
+
+    def test_unknown_kind_is_rejected(self):
+        with self.assertRaises(ValueError):
+            hx.isolation_agent("nope", "/h", "/s")
+
+    def run_with_capture(self, role, **role_cfg):
+        seen = {}
+
+        def fake_streaming(args, cwd, env, limit, stall_limit):
+            seen["args"], seen["env"] = args, env
+            return STEP + "\n", "", False, False
+        cfg = dict(hx.CFG["roles"][role], **role_cfg)
+        with mock.patch.dict(hx.CFG["roles"], {role: cfg}), mock.patch.object(hx, "run_streaming", fake_streaming), \
+                contextlib.redirect_stdout(io.StringIO()):
+            hx.run_role(role, "HX-H1", str(self.spec), reap=False)
+        return seen
+
+    def test_isolation_is_off_by_default(self):
+        seen = self.run_with_capture("worker")
+        self.assertNotIn("--standalone", seen["args"])
+        self.assertNotIn("--agent", seen["args"])
+        self.assertNotIn("OPENCODE_CONFIG_CONTENT", seen["env"])
+
+    def test_worker_isolation_adds_agent_standalone_and_config(self):
+        seen = self.run_with_capture("worker", isolation="worker")
+        args = seen["args"]
+        self.assertIn("--standalone", args)
+        self.assertEqual("hx-worker", args[args.index("--agent") + 1])
+        cfg = json.loads(seen["env"]["OPENCODE_CONFIG_CONTENT"])
+        self.assertIn("hx-worker", cfg["agents"])
+
+    def test_existing_config_content_is_merged_not_replaced(self):
+        with mock.patch.dict(os.environ, {"OPENCODE_CONFIG_CONTENT": json.dumps({"theme": "x", "agents": {"keep": {}}})}):
+            seen = self.run_with_capture("worker", isolation="worker")
+        cfg = json.loads(seen["env"]["OPENCODE_CONFIG_CONTENT"])
+        self.assertEqual("x", cfg["theme"])
+        self.assertEqual({"keep", "hx-worker"}, set(cfg["agents"]))
+
+    def test_read_only_roles_keep_the_plan_agent(self):
+        seen = self.run_with_capture("judge", isolation="worker")
+        args = seen["args"]
+        self.assertEqual("plan", args[args.index("--agent") + 1])
+        self.assertNotIn("--standalone", args)
+
+
 if __name__ == "__main__":
     unittest.main()

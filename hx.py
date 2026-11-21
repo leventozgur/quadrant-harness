@@ -555,6 +555,37 @@ def rate_limited(raw, err):
     return False
 
 
+def isolation_agent(kind, hidden, state):
+    """OpenCode agent definition (v2 `agents` config) that fences the hidden-test dir, verified on OpenCode v2.3.0:
+    - "worker": read/glob/grep/list-style access to the hidden dir and hx state dir is denied (`external_directory`
+      and `read` rules; the tool's `path` is what is matched, `grep`'s own resource is the regex so it cannot be
+      used for this). Shell commands are NOT covered (a shell can still `cat` anything): `hidden_accesses` and the
+      gate (HX-30b/c) catch those.
+    - "tester": every `edit`/`write` is denied except inside the hidden dir, so the project stays read-only for the
+      tester's file tools. Shell writes are not covered either.
+    Rules are ordered and the last match wins."""
+    paths = []
+    for d in (hidden, state):
+        for x in (str(d), os.path.realpath(str(d))):
+            for pat in (x, x + "/*", x + "/**"):
+                if pat not in paths:
+                    paths.append(pat)
+    perms = [{"action": "*", "resource": "*", "effect": "allow"}]
+    if kind == "worker":
+        for pat in paths:
+            perms.append({"action": "external_directory", "resource": pat, "effect": "deny"})
+            perms.append({"action": "read", "resource": pat, "effect": "deny"})
+    elif kind == "tester":
+        perms.append({"action": "edit", "resource": "*", "effect": "deny"})
+        for pat in [x for x in paths if x.startswith((str(hidden), os.path.realpath(str(hidden))))]:
+            perms.append({"action": "edit", "resource": pat, "effect": "allow"})
+    else:
+        raise ValueError(f"unknown isolation kind {kind!r}")
+    name = f"hx-{kind}"
+    return name, {"agents": {name: {"description": f"hx {kind} with the hidden tests fenced", "mode": "primary",
+                                   "permissions": perms}}}
+
+
 _PATH_KEYS = {"path", "filepath", "file_path", "pattern", "glob", "directory", "dir", "cwd", "workdir", "include",
               "file", "files", "paths"}
 _GLOB_MAGIC = re.compile(r"[*?\[{].*$")
@@ -660,12 +691,23 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
                   "where you stopped. Run `git status` and `git diff --stat` first; do not redo finished work.\n\n"
                   "# Feedback (fix these too; \"Yok.\" means none)\n" + (Path(feedback).read_text() if feedback else "Yok.")
                   + "\n\nThen go through the final checklist of the original instructions and write the report as asked there.")
+    iso = None if (read_only or role.get("read_only")) else role.get("isolation")
     if read_only or role.get("read_only"):
         args += ["--agent", "plan"]
+    elif iso:  # opt-in per role in config.json; needs a private server so OPENCODE_CONFIG_CONTENT takes effect
+        agent_name, agent_cfg = isolation_agent(iso, p["hidden"], state_dir())
+        args += ["--standalone", "--agent", agent_name]
     args.append(prompt)
     base_env = dict(os.environ)
     env, env_dropped = child_env(base_env, CFG.get("env_passthrough") or [])
     env["PWD"] = str(cwd)  # added after filtering so the role's cwd is never dropped
+    if iso:  # merge into an existing OPENCODE_CONFIG_CONTENT instead of replacing it
+        try:
+            merged = json.loads(env.get("OPENCODE_CONFIG_CONTENT") or "{}")
+        except ValueError:
+            merged = {}
+        merged.setdefault("agents", {}).update(agent_cfg["agents"])
+        env["OPENCODE_CONFIG_CONTENT"] = json.dumps(merged)
     with _lock:
         # only plain "<role>-<n>.jsonl" files count; "<role>-<n>.attempt<k>.jsonl" retries must not shift n
         n = sum(1 for f in p["state"].glob(f"{role_name}-*.jsonl") if f.stem[len(role_name) + 1:].isdigit()) + 1
