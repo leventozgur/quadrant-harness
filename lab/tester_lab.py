@@ -102,7 +102,7 @@ def generate(label, model, reps):
                 t0 = time.time()
                 timeout = False
                 try:
-                    p = subprocess.run(["opencode", "run", "-m", model, "--format", "json", prompt], cwd=hidden,
+                    p = subprocess.run(["opencode", "run", "--standalone", "-m", model, "--format", "json", prompt], cwd=hidden,
                                        env=dict(os.environ, PWD=str(hidden)), capture_output=True, text=True, timeout=1200)
                     out, err = p.stdout, p.stderr
                 except subprocess.TimeoutExpired as e:

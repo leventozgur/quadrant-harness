@@ -368,8 +368,8 @@ class JudgeTest(TempDirTest):
         self.assertEqual(records[0]["category"], "MIXED")
         calls = read_calls(fake)
         self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0][:5], ["run", "-m", "test/model", "--format", "json"])
-        prompt = calls[0][5]
+        self.assertEqual(calls[0][:6], ["run", "--standalone", "-m", "test/model", "--format", "json"])
+        prompt = calls[0][6]
         case_dir = out / "cases" / "lbl__h03_r1__ref"
         blind = out / "blind" / hashlib.sha1(b"lbl__h03_r1__ref1").hexdigest()[:12]
         self.assertIn(J.H.P["h03"], prompt)
@@ -434,6 +434,26 @@ class JudgeTest(TempDirTest):
         self.assertNotIn("__ref", str(cwd))
         self.assertFalse(cwd.parent.exists())
 
+    def test_standalone_and_pwd_point_at_the_absolute_blind_project(self):
+        self.make_case()
+        fake = self.tmp / "fake"
+        fake.mkdir()
+        script = fake / "opencode"
+        script.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os\n"
+            "here = os.path.dirname(os.path.abspath(__file__))\n"
+            "with open(os.path.join(here, 'env.json'), 'w') as f:\n"
+            "    json.dump({'cwd': os.getcwd(), 'pwd': os.environ.get('PWD')}, f)\n"
+            "print(json.dumps({'type': 'text', 'part': {'messageID': 'm',\n"
+            "      'text': 'KOD_HATASI — k — k'}}))\n", encoding="utf-8")
+        script.chmod(0o755)
+        records, _out = self.judge(fake, reps=1)
+        self.assertFalse(records[0]["infra"])
+        env = json.loads((fake / "env.json").read_text())
+        self.assertTrue(os.path.isabs(env["pwd"]))
+        self.assertEqual(env["pwd"], env["cwd"])
+
     def test_empty_answer_is_infra(self):
         self.make_case()
         empty = self.tmp / "empty"
@@ -457,6 +477,36 @@ class JudgeTest(TempDirTest):
         rep = json.loads((out / "cases" / "lbl__h03_r1__ref" / "rep_1.json").read_text())
         self.assertTrue(rep["infra"])
         self.assertIn("UnicodeDecodeError", rep["error"])
+
+
+class TestTesterGenerate(TempDirTest):
+    def test_generate_is_standalone_and_keeps_hidden_as_pwd(self):
+        fake = self.tmp / "fake"
+        fake.mkdir()
+        script = fake / "opencode"
+        script.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, sys\n"
+            "here = os.path.dirname(os.path.abspath(__file__))\n"
+            "with open(os.path.join(here, 'calls.jsonl'), 'a', encoding='utf-8') as f:\n"
+            "    f.write(json.dumps({'argv': sys.argv[1:], 'cwd': os.getcwd(),\n"
+            "                        'pwd': os.environ.get('PWD')}, ensure_ascii=False) + '\\n')\n"
+            "print(json.dumps({'type': 'text', 'part': {'messageID': 'm', 'text': 'ok'}}))\n",
+            encoding="utf-8")
+        script.chmod(0o755)
+        runs = self.tmp / "runs"
+        env = {"PATH": str(fake) + os.pathsep + os.environ.get("PATH", "")}
+        with mock.patch.dict(os.environ, env), \
+                mock.patch.object(J.T, "ROOT", runs), \
+                mock.patch.object(J.T.H, "HARD", ["h03"]), \
+                mock.patch.dict(J.T.H.FIX, {"h03": lambda d: None}), \
+                mock.patch.dict(J.T.H.P, {"h03": "SPEC"}):
+            J.T.generate("lbl", "test/model", 1)
+        call = json.loads((fake / "calls.jsonl").read_text().splitlines()[0])
+        self.assertEqual(call["argv"][:6], ["run", "--standalone", "-m", "test/model", "--format", "json"])
+        hidden = runs / "lbl" / "h03_r1" / "hidden"
+        self.assertEqual(Path(call["cwd"]), hidden.resolve())
+        self.assertEqual(call["pwd"], str(hidden))
 
 
 class TestScore(TempDirTest):
