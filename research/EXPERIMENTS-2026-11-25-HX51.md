@@ -24,3 +24,20 @@ karşı kappa, "fail loudly") yazıları; bkz. planning PRJ-003 HX-51.
 - Maliyet/süre için KOD vakaları örneklenir: her görev için `hx51qw` ve `hx51km`'den case_id sırasına göre ilk 3'er KOD vakası
   (en çok 42). Diğer KOD vaka dizinleri `out/unused/` altına taşınır, silinmez.
 - Karar kuralları değişmedi. Sınırlama: enjekte TEST vakaları gerçek testçi hatalarından daha "temiz" olabilir.
+
+## Sonuç (2026-11-25)
+56 vaka (42 KOD, 14 TEST: 2 yapısal + 12 enjekte), 3 rep, GLM-5.3-Flash#low, infra 0.
+
+| Metrik | Eşik | Sonuç |
+|---|---|---|
+| flip_rate | ≤ 0.10 | 0.036 (2/56 vaka) |
+| kod_judged_test | ≤ 0.05 | 0.016 (2/126 rep) |
+| test_judged_kod | ≤ 0.20 | 0.000 |
+| rep doğruluğu KOD / TEST | — | 0.984 / 1.000 |
+| çoğunluk doğruluğu, kappa | — | 1.000, 1.000 |
+| BELIRSIZ oranı | — | 0.000 |
+
+Karar: kural 4 — hiçbir eşik aşılmadı; hakem şablonu/modeli değişmez. Çoğunluk oyu tek rep hatalarını düzeltiyor ama tek rep
+zaten %98+ doğru; çift koşu oylaması maliyetine değmez (bilerek alınmayan "3'lü hakem oylaması" kararı bu veriyle destekleniyor).
+Sınırlama: sentetik Python görevleri ve temiz enjekte TEST vakaları; gerçek işlerdeki G sınıfı (.NET regex) testleri temsil edilmedi.
+Veri: `~/Desktop/Projects/quadrant-harness-results/hx51/out/score.json`.
