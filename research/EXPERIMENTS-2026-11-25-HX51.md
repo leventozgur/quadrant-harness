@@ -16,3 +16,11 @@ karşı kappa, "fail loudly") yazıları; bkz. planning PRJ-003 HX-51.
 4. Hiçbiri aşılmazsa: hakem "bilerek alınmayanlar"daki kabulle uyumlu (büyük ölçüde doğru), değişiklik yok.
 - Infra rep'ler ayrı sayılır; geçerli rep oranı < %90 ise sonuç "belirsiz" ve ölçüm tekrarlanır.
 - Sınırlama: sentetik Python görevleri; gerçek işlerdeki Node/.NET dağılımını temsil etmeyebilir.
+
+## Ek (2026-11-25, hakem koşmadan önce)
+- Yapı yalnız 2 TEST vakası verdi (98 KOD); iki testçi de bu kez neredeyse hep doğru test yazdı. TEST tarafı için ek kaynak:
+  `hx51bad` = `hx51qw` takımlarının kopyası; DeepSeek V4.1 Flash her takımda tek bir assertion'ı spec'e aykırı hâle getirdi
+  ("dikkatsiz testçi" simülasyonu). Bu takımlardan yalnız TEST vakaları alınır (mutant/KOD vakaları atılır).
+- Maliyet/süre için KOD vakaları örneklenir: her görev için `hx51qw` ve `hx51km`'den case_id sırasına göre ilk 3'er KOD vakası
+  (en çok 42). Diğer KOD vaka dizinleri `out/unused/` altına taşınır, silinmez.
+- Karar kuralları değişmedi. Sınırlama: enjekte TEST vakaları gerçek testçi hatalarından daha "temiz" olabilir.
