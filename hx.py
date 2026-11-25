@@ -23,7 +23,7 @@
 
 State lives in <git-common-dir>/hx (inside .git, never in a diff). Roles and models: config.json.
 """
-import argparse, json, os, re, shlex, subprocess, sys, threading, time
+import argparse, json, os, re, shlex, shutil, subprocess, sys, tempfile, threading, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -586,6 +586,40 @@ def isolation_agent(kind, hidden, state):
                                    "permissions": perms}}}
 
 
+def sandbox_profile(role, hidden, state, n, profile_dir=None):
+    """Write the sandbox-exec profile that denies the hidden-test and state dirs; returns its path.
+    The profile itself goes to `profile_dir` (the task's state dir by default) so tasks never overwrite each other."""
+    a, b = os.path.realpath(str(hidden)), os.path.realpath(str(state))
+    if any(c in x for x in (a, b) for c in ('"', "\\")):
+        sys.exit("hx: sandbox profile path contains a quote or backslash")
+    path = Path(profile_dir or state) / f"sandbox-{role}-{n}.sb"
+    path.write_text(f'(version 1)\n(allow default)\n(deny file-read* file-write* (subpath "{a}") (subpath "{b}"))\n')
+    return path
+
+
+def sandbox_self_check(profile, state):
+    """Canary: the profile must block reading a token in the state dir and allow a trivial command. Fail closed.
+    The canary name is call-specific (mkstemp), so two self-checks can never clobber each other's canary."""
+    token = os.urandom(16).hex()
+    fd, name = tempfile.mkstemp(dir=str(state), prefix=".sbx_canary-")
+    os.close(fd)
+    canary = Path(name)
+    canary.write_text(token)
+    try:
+        try:
+            read = subprocess.run(["sandbox-exec", "-f", str(profile), "/bin/cat", name],
+                                  capture_output=True, text=True, timeout=30)
+            true = subprocess.run(["sandbox-exec", "-f", str(profile), "/usr/bin/true"],
+                                  capture_output=True, text=True, timeout=30)
+        except (subprocess.TimeoutExpired, OSError):
+            sys.exit("hx: sandbox self-check failed")
+        blocked = read.returncode != 0 and token not in read.stdout and "Operation not permitted" in read.stderr
+        if not blocked or true.returncode != 0:
+            sys.exit("hx: sandbox self-check failed")
+    finally:
+        canary.unlink(missing_ok=True)
+
+
 _PATH_KEYS = {"path", "filepath", "file_path", "pattern", "glob", "directory", "dir", "cwd", "workdir", "include",
               "file", "files", "paths"}
 _GLOB_MAGIC = re.compile(r"[*?\[{].*$")
@@ -708,10 +742,28 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
             merged = {}
         merged.setdefault("agents", {}).update(agent_cfg["agents"])
         env["OPENCODE_CONFIG_CONTENT"] = json.dumps(merged)
-    with _lock:
+    with _lock:  # pick n and reserve the call file together: parallel calls must never share a number
         # only plain "<role>-<n>.jsonl" files count; "<role>-<n>.attempt<k>.jsonl" retries must not shift n
         n = sum(1 for f in p["state"].glob(f"{role_name}-*.jsonl") if f.stem[len(role_name) + 1:].isdigit()) + 1
-        (p["state"] / f"{role_name}-{n}.jsonl").write_text("")  # reserve the number
+        reserved = p["state"] / f"{role_name}-{n}.jsonl"
+        reserved.write_text("")
+    sandbox = bool(role.get("sandbox"))
+    if sandbox and (sees_hidden or read_only or role.get("read_only")):
+        print(f"hx: sandbox ignored for role {role_name}", file=sys.stderr)
+        sandbox = False
+    if sandbox:
+        try:
+            if sys.platform != "darwin" or shutil.which("sandbox-exec") is None:
+                sys.exit("hx: sandbox unavailable")
+            profile = sandbox_profile(role_name, p["hidden"], state_dir(), n, p["state"])
+            sandbox_self_check(profile, p["state"])
+            if "--standalone" not in args:
+                args.insert(args.index("run") + 1, "--standalone")
+            args = ["sandbox-exec", "-f", str(profile)] + args
+        except BaseException:  # no call will start: drop the reservation so it does not occupy n
+            with _lock:
+                reserved.unlink(missing_ok=True)
+            raise
     mark_first_call(p)
     t0 = time.time()
     raw, err, timeout = "", "", False
@@ -747,6 +799,8 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
            "timeout": timeout, "stalled": stalled, "attempts": attempts, "hidden_access": bool(hidden_hits), "ha_v": 2, "tokens": tok, "go_cost_est": est_cost(model, step_toks), "price_v": 2, "reaped": reaped, "env_dropped": env_dropped}
     if hidden_hits:
         rec["hidden_paths"] = hidden_hits[:5]
+    if sandbox:
+        rec["sandbox"] = True
     if reaped_procs:
         rec["reaped_procs"] = reaped_procs
     if force:
