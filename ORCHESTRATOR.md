@@ -97,3 +97,4 @@ Uçak kontrol listesi gibi: kısa, sıralı, tek anlamlı.
 - Haftada bir `hx report` çıktısını bana özetle (tur, kapı başarısızlığı, yükseltme, denetçi reddi,
   Go maliyeti; tahmin token'lardan, `hx prices --refresh` ile güncel fiyatlar; ayda bir yenile). İki hafta sonunda: kapıyı ilk turda geçme < %60 veya denetçi reddi > %40 ise düzeni
   birlikte yeniden değerlendirelim.
+- Kapı, görünür test dosyalarında skip/sleep/retry/assert silme/test silme desenlerini `gaming_flags` olarak yalnız raporlar (HX-49, gözlem kipi); kapı kararını değiştirmez. Bayrak görürsen ilgili satırı oku, gerekçesizse worker'a geri ver.
