@@ -306,9 +306,10 @@ def _run_rep(case, case_dir, dest, out, rep, model, template, opencode):
             prompt = _judge_prompt(template, case, (blind / "hidden").resolve(),
                                    (blind / "project").resolve(),
                                    _neutral_gate(case, case_dir, blind))
-            p = subprocess.run([opencode, "run", "-m", model, "--format", "json", prompt],
-                               cwd=str(blind / "project"), capture_output=True, text=True,
-                               timeout=JUDGE_TIMEOUT_S)
+            cwd = (blind / "project").resolve()
+            p = subprocess.run([opencode, "run", "--standalone", "-m", model, "--format", "json", prompt],
+                               cwd=str(cwd), env=dict(os.environ, PWD=str(cwd)),
+                               capture_output=True, text=True, timeout=JUDGE_TIMEOUT_S)
             answer, _meta = run_oc.parse(p.stdout or "")
             if p.returncode != 0:
                 infra = True
