@@ -1,0 +1,591 @@
+hx47A1: total_loc=1036 runs=21 missing=[]
+hx47A2: total_loc=1046 runs=21 missing=[]
+hx47B1: total_loc=900 runs=21 missing=[]
+hx47B2: total_loc=640 runs=21 missing=[]
+{
+ "hx47A1": {
+  "total_loc": 1036,
+  "missing": [],
+  "runs": {
+   "t03": {
+    "file_loc": 0,
+    "fence_loc": 25,
+    "loc": 25,
+    "new_files": []
+   },
+   "t04": {
+    "file_loc": 0,
+    "fence_loc": 8,
+    "loc": 8,
+    "new_files": []
+   },
+   "t05": {
+    "file_loc": 382,
+    "fence_loc": 0,
+    "loc": 382,
+    "new_files": [
+     "README.md",
+     "app.js",
+     "index.html",
+     "style.css"
+    ]
+   },
+   "t06": {
+    "file_loc": 0,
+    "fence_loc": 0,
+    "loc": 0,
+    "new_files": []
+   },
+   "t06b": {
+    "file_loc": 0,
+    "fence_loc": 0,
+    "loc": 0,
+    "new_files": []
+   },
+   "t07": {
+    "file_loc": 28,
+    "fence_loc": 7,
+    "loc": 35,
+    "new_files": []
+   },
+   "t09": {
+    "file_loc": 0,
+    "fence_loc": 34,
+    "loc": 34,
+    "new_files": []
+   },
+   "t11_low1": {
+    "file_loc": 0,
+    "fence_loc": 22,
+    "loc": 22,
+    "new_files": []
+   },
+   "t11_low2": {
+    "file_loc": 0,
+    "fence_loc": 16,
+    "loc": 16,
+    "new_files": []
+   },
+   "t11_high1": {
+    "file_loc": 0,
+    "fence_loc": 18,
+    "loc": 18,
+    "new_files": []
+   },
+   "t11_high2": {
+    "file_loc": 0,
+    "fence_loc": 16,
+    "loc": 16,
+    "new_files": []
+   },
+   "t11_high3": {
+    "file_loc": 0,
+    "fence_loc": 16,
+    "loc": 16,
+    "new_files": []
+   },
+   "t11_max1": {
+    "file_loc": 0,
+    "fence_loc": 20,
+    "loc": 20,
+    "new_files": []
+   },
+   "t11_max2": {
+    "file_loc": 0,
+    "fence_loc": 21,
+    "loc": 21,
+    "new_files": []
+   },
+   "h01_r1": {
+    "file_loc": 3,
+    "fence_loc": 0,
+    "loc": 3,
+    "new_files": []
+   },
+   "h02_r1": {
+    "file_loc": 13,
+    "fence_loc": 5,
+    "loc": 18,
+    "new_files": []
+   },
+   "h03_r1": {
+    "file_loc": 103,
+    "fence_loc": 4,
+    "loc": 107,
+    "new_files": [
+     "tests/test_workdays.py",
+     "workdays.py"
+    ]
+   },
+   "h04_r1": {
+    "file_loc": 44,
+    "fence_loc": 5,
+    "loc": 49,
+    "new_files": []
+   },
+   "h05_r1": {
+    "file_loc": 3,
+    "fence_loc": 0,
+    "loc": 3,
+    "new_files": []
+   },
+   "h06_r1": {
+    "file_loc": 128,
+    "fence_loc": 8,
+    "loc": 136,
+    "new_files": [
+     "ratelimit.py",
+     "tests/test_ratelimit.py"
+    ]
+   },
+   "h07_r1": {
+    "file_loc": 107,
+    "fence_loc": 0,
+    "loc": 107,
+    "new_files": [
+     "csvline.py",
+     "tests/test_csvline.py"
+    ]
+   }
+  }
+ },
+ "hx47A2": {
+  "total_loc": 1046,
+  "missing": [],
+  "runs": {
+   "t03": {
+    "file_loc": 0,
+    "fence_loc": 25,
+    "loc": 25,
+    "new_files": []
+   },
+   "t04": {
+    "file_loc": 0,
+    "fence_loc": 10,
+    "loc": 10,
+    "new_files": []
+   },
+   "t05": {
+    "file_loc": 402,
+    "fence_loc": 2,
+    "loc": 404,
+    "new_files": [
+     "README.md",
+     "notes.py",
+     "test_notes.py"
+    ]
+   },
+   "t06": {
+    "file_loc": 0,
+    "fence_loc": 0,
+    "loc": 0,
+    "new_files": []
+   },
+   "t06b": {
+    "file_loc": 0,
+    "fence_loc": 0,
+    "loc": 0,
+    "new_files": []
+   },
+   "t07": {
+    "file_loc": 35,
+    "fence_loc": 3,
+    "loc": 38,
+    "new_files": []
+   },
+   "t09": {
+    "file_loc": 0,
+    "fence_loc": 30,
+    "loc": 30,
+    "new_files": []
+   },
+   "t11_low1": {
+    "file_loc": 0,
+    "fence_loc": 23,
+    "loc": 23,
+    "new_files": []
+   },
+   "t11_low2": {
+    "file_loc": 0,
+    "fence_loc": 28,
+    "loc": 28,
+    "new_files": []
+   },
+   "t11_high1": {
+    "file_loc": 0,
+    "fence_loc": 16,
+    "loc": 16,
+    "new_files": []
+   },
+   "t11_high2": {
+    "file_loc": 0,
+    "fence_loc": 22,
+    "loc": 22,
+    "new_files": []
+   },
+   "t11_high3": {
+    "file_loc": 0,
+    "fence_loc": 16,
+    "loc": 16,
+    "new_files": []
+   },
+   "t11_max1": {
+    "file_loc": 0,
+    "fence_loc": 17,
+    "loc": 17,
+    "new_files": []
+   },
+   "t11_max2": {
+    "file_loc": 0,
+    "fence_loc": 16,
+    "loc": 16,
+    "new_files": []
+   },
+   "h01_r1": {
+    "file_loc": 3,
+    "fence_loc": 3,
+    "loc": 6,
+    "new_files": []
+   },
+   "h02_r1": {
+    "file_loc": 13,
+    "fence_loc": 5,
+    "loc": 18,
+    "new_files": []
+   },
+   "h03_r1": {
+    "file_loc": 113,
+    "fence_loc": 0,
+    "loc": 113,
+    "new_files": [
+     "tests/test_workdays.py",
+     "workdays.py"
+    ]
+   },
+   "h04_r1": {
+    "file_loc": 35,
+    "fence_loc": 0,
+    "loc": 35,
+    "new_files": []
+   },
+   "h05_r1": {
+    "file_loc": 4,
+    "fence_loc": 0,
+    "loc": 4,
+    "new_files": []
+   },
+   "h06_r1": {
+    "file_loc": 114,
+    "fence_loc": 4,
+    "loc": 118,
+    "new_files": [
+     "ratelimit.py",
+     "tests/test_ratelimit.py"
+    ]
+   },
+   "h07_r1": {
+    "file_loc": 107,
+    "fence_loc": 0,
+    "loc": 107,
+    "new_files": [
+     "csvline.py",
+     "tests/__init__.py",
+     "tests/test_csvline.py"
+    ]
+   }
+  }
+ },
+ "hx47B1": {
+  "total_loc": 900,
+  "missing": [],
+  "runs": {
+   "t03": {
+    "file_loc": 0,
+    "fence_loc": 7,
+    "loc": 7,
+    "new_files": []
+   },
+   "t04": {
+    "file_loc": 0,
+    "fence_loc": 10,
+    "loc": 10,
+    "new_files": []
+   },
+   "t05": {
+    "file_loc": 377,
+    "fence_loc": 0,
+    "loc": 377,
+    "new_files": [
+     "app.js",
+     "index.html",
+     "styles.css"
+    ]
+   },
+   "t06": {
+    "file_loc": 0,
+    "fence_loc": 0,
+    "loc": 0,
+    "new_files": []
+   },
+   "t06b": {
+    "file_loc": 0,
+    "fence_loc": 0,
+    "loc": 0,
+    "new_files": []
+   },
+   "t07": {
+    "file_loc": 19,
+    "fence_loc": 3,
+    "loc": 22,
+    "new_files": []
+   },
+   "t09": {
+    "file_loc": 0,
+    "fence_loc": 12,
+    "loc": 12,
+    "new_files": []
+   },
+   "t11_low1": {
+    "file_loc": 0,
+    "fence_loc": 16,
+    "loc": 16,
+    "new_files": []
+   },
+   "t11_low2": {
+    "file_loc": 0,
+    "fence_loc": 22,
+    "loc": 22,
+    "new_files": []
+   },
+   "t11_high1": {
+    "file_loc": 0,
+    "fence_loc": 10,
+    "loc": 10,
+    "new_files": []
+   },
+   "t11_high2": {
+    "file_loc": 0,
+    "fence_loc": 22,
+    "loc": 22,
+    "new_files": []
+   },
+   "t11_high3": {
+    "file_loc": 0,
+    "fence_loc": 16,
+    "loc": 16,
+    "new_files": []
+   },
+   "t11_max1": {
+    "file_loc": 0,
+    "fence_loc": 21,
+    "loc": 21,
+    "new_files": []
+   },
+   "t11_max2": {
+    "file_loc": 0,
+    "fence_loc": 19,
+    "loc": 19,
+    "new_files": []
+   },
+   "h01_r1": {
+    "file_loc": 3,
+    "fence_loc": 4,
+    "loc": 7,
+    "new_files": []
+   },
+   "h02_r1": {
+    "file_loc": 13,
+    "fence_loc": 5,
+    "loc": 18,
+    "new_files": []
+   },
+   "h03_r1": {
+    "file_loc": 75,
+    "fence_loc": 0,
+    "loc": 75,
+    "new_files": [
+     "tests/__init__.py",
+     "tests/test_workdays.py",
+     "workdays.py"
+    ]
+   },
+   "h04_r1": {
+    "file_loc": 38,
+    "fence_loc": 3,
+    "loc": 41,
+    "new_files": []
+   },
+   "h05_r1": {
+    "file_loc": 4,
+    "fence_loc": 3,
+    "loc": 7,
+    "new_files": []
+   },
+   "h06_r1": {
+    "file_loc": 113,
+    "fence_loc": 0,
+    "loc": 113,
+    "new_files": [
+     "ratelimit.py",
+     "tests/test_ratelimit.py"
+    ]
+   },
+   "h07_r1": {
+    "file_loc": 85,
+    "fence_loc": 0,
+    "loc": 85,
+    "new_files": [
+     "csvline.py",
+     "tests/test_csvline.py"
+    ]
+   }
+  }
+ },
+ "hx47B2": {
+  "total_loc": 640,
+  "missing": [],
+  "runs": {
+   "t03": {
+    "file_loc": 0,
+    "fence_loc": 25,
+    "loc": 25,
+    "new_files": []
+   },
+   "t04": {
+    "file_loc": 0,
+    "fence_loc": 10,
+    "loc": 10,
+    "new_files": []
+   },
+   "t05": {
+    "file_loc": 94,
+    "fence_loc": 4,
+    "loc": 98,
+    "new_files": [
+     "README.md",
+     "notlar.py"
+    ]
+   },
+   "t06": {
+    "file_loc": 0,
+    "fence_loc": 0,
+    "loc": 0,
+    "new_files": []
+   },
+   "t06b": {
+    "file_loc": 0,
+    "fence_loc": 0,
+    "loc": 0,
+    "new_files": []
+   },
+   "t07": {
+    "file_loc": 19,
+    "fence_loc": 3,
+    "loc": 22,
+    "new_files": []
+   },
+   "t09": {
+    "file_loc": 19,
+    "fence_loc": 16,
+    "loc": 35,
+    "new_files": [
+     "ornek.py"
+    ]
+   },
+   "t11_low1": {
+    "file_loc": 0,
+    "fence_loc": 16,
+    "loc": 16,
+    "new_files": []
+   },
+   "t11_low2": {
+    "file_loc": 0,
+    "fence_loc": 16,
+    "loc": 16,
+    "new_files": []
+   },
+   "t11_high1": {
+    "file_loc": 0,
+    "fence_loc": 21,
+    "loc": 21,
+    "new_files": []
+   },
+   "t11_high2": {
+    "file_loc": 0,
+    "fence_loc": 16,
+    "loc": 16,
+    "new_files": []
+   },
+   "t11_high3": {
+    "file_loc": 0,
+    "fence_loc": 16,
+    "loc": 16,
+    "new_files": []
+   },
+   "t11_max1": {
+    "file_loc": 0,
+    "fence_loc": 18,
+    "loc": 18,
+    "new_files": []
+   },
+   "t11_max2": {
+    "file_loc": 0,
+    "fence_loc": 17,
+    "loc": 17,
+    "new_files": []
+   },
+   "h01_r1": {
+    "file_loc": 3,
+    "fence_loc": 3,
+    "loc": 6,
+    "new_files": []
+   },
+   "h02_r1": {
+    "file_loc": 13,
+    "fence_loc": 5,
+    "loc": 18,
+    "new_files": []
+   },
+   "h03_r1": {
+    "file_loc": 76,
+    "fence_loc": 0,
+    "loc": 76,
+    "new_files": [
+     "tests/__init__.py",
+     "tests/test_workdays.py",
+     "workdays.py"
+    ]
+   },
+   "h04_r1": {
+    "file_loc": 22,
+    "fence_loc": 3,
+    "loc": 25,
+    "new_files": []
+   },
+   "h05_r1": {
+    "file_loc": 3,
+    "fence_loc": 0,
+    "loc": 3,
+    "new_files": []
+   },
+   "h06_r1": {
+    "file_loc": 110,
+    "fence_loc": 4,
+    "loc": 114,
+    "new_files": [
+     "ratelimit.py",
+     "tests/test_ratelimit.py"
+    ]
+   },
+   "h07_r1": {
+    "file_loc": 88,
+    "fence_loc": 0,
+    "loc": 88,
+    "new_files": [
+     "csvline.py",
+     "tests/test_csvline.py"
+    ]
+   }
+  }
+ }
+}
