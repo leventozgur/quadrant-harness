@@ -4,8 +4,7 @@
       "model": "opencode-go/deepseek-v4.1-flash",
       "template": "worker.md",
       "note": "2026-11-16 lab v5: EN şablon + varsayılan effort (=high) base 18/18, hard 7/7; eski TR + #low 17/18, 7/7; +%17 maliyet, +%27 süre; 2026-11-16 timeout 1200→2400: 11 worker çağrısından 2'si aktifken 1200 s'de kesildi (BA-21, BA-32 80 adım), BA-37 1188 s; asılı kalma stall_s ile yakalanır",
-      "timeout_s": 2400,
-      "sandbox": true
+      "timeout_s": 2400
     },
     "tester": {
       "model": "opencode-go/qwen3.7-plus#high",
@@ -17,8 +16,7 @@
     "escalate": {
       "model": "opencode-go/glm-5.3-flash#high",
       "template": "worker.md",
-      "note": "ikinci görüş: farklı aile; o da geçemezse Opus kullanıcıya sorar, Sonnet yazar",
-      "sandbox": true
+      "note": "ikinci görüş: farklı aile; o da geçemezse Opus kullanıcıya sorar, Sonnet yazar"
     },
     "judge": {
       "model": "opencode-go/glm-5.3-flash#low",
