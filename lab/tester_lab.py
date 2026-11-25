@@ -13,7 +13,7 @@ sys.path.insert(0, str(HERE))
 import hard as H  # noqa: E402
 from run_oc import parse  # noqa: E402
 
-ROOT = Path("/private/tmp/claude-501/lab-runs/tester")
+ROOT = Path(os.environ.get("TESTER_LAB_ROOT", "/private/tmp/claude-501/lab-runs/tester"))
 TEMPLATE = Path(os.environ.get("TESTER_TEMPLATE", HERE.parent / "templates/tester.md")).read_text()
 
 
