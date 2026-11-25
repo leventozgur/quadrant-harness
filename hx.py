@@ -10,6 +10,7 @@
   hx.py triage <task> <spec.md>                    judge model classifies failing hidden tests; writes
                                                    worker_feedback.txt (rules only, no test code)
   hx.py gate   <task> --test CMD [--hidden-cmd CMD] --allow GLOBS [--protect GLOBS] [--no-tests]
+  hx.py scan-gaming <repo> <rev1> <rev2> [--json]  report test-gaming patterns in a diff (observe only, HX-49)
   hx.py diff   <task> [--all]                      write the diff for the reviewer (current phase; --all = whole task)
   hx.py review <task> <reviewer_output.md>         record the blind reviewer's ONAY/RED with the diff's sha256
   hx.py commit <task> -m MSG [--phase N] [--next TEXT]   needs a recorded ONAY for the current diff
@@ -1155,6 +1156,180 @@ def run_with_timeout(cmd, cwd, env, timeout):
         return None, _as_text(out) + _as_text(err), True
 
 
+# ------------------------------------------------------------------ gaming flags (HX-49, observe only)
+_TEST_DIRS = {"tests", "test", "__tests__", "spec"}
+_SKIP_MARKERS = ("@unittest.skip", "unittest.skip(", "pytest.mark.skip", "pytest.skip(", "pytest.mark.xfail",
+                 ".skip(", ".only(", ".todo(", "skip: true", "{ skip", "Skip =", "[Ignore")
+_SLEEP_MARKERS = ("time.sleep(", "asyncio.sleep(", "setTimeout(", "Thread.Sleep(", "Task.Delay(", "await sleep(")
+_RETRY_MARKERS = ("flaky", "retry", "retries", "rerun")
+_ASSERT_MARKERS = ("assert", "expect(", "Assert.", ".should")
+
+
+def is_test_file(path):
+    """True when `path` is a test file: a tests/test/__tests__/spec component, a test_ prefix, a
+    _test./.test./.spec. component or a Tests.cs/Test.cs suffix."""
+    parts = [p for p in path.split("/") if p]
+    if not parts:
+        return False
+    if any(p in _TEST_DIRS for p in parts):
+        return True
+    name = parts[-1]
+    return (name.startswith("test_") or any(m in name for m in ("_test.", ".test.", ".spec."))
+            or name.endswith(("Tests.cs", "Test.cs")))
+
+
+def _diff_header_path(line):
+    """Repo-relative path from a `--- a/PATH` or `+++ b/PATH` line; None for /dev/null. A path git quoted
+    (`"a/t\\303\\266.py"`, see core.quotepath) is C-unescaped and its a/ b/ prefix dropped."""
+    p = line[4:].strip()
+    if p.startswith('"') and p.endswith('"') and len(p) >= 2:
+        out, i, body, octal = bytearray(), 0, p[1:-1], "01234567"
+        while i < len(body):
+            c = body[i]
+            if c == "\\" and i + 1 < len(body):
+                nxt = body[i + 1]
+                if nxt in octal and i + 3 < len(body) and body[i + 2] in octal and body[i + 3] in octal:
+                    out.append(int(body[i + 1:i + 4], 8))
+                    i += 4
+                    continue
+                esc = {"a": b"\a", "b": b"\b", "f": b"\f", "n": b"\n", "r": b"\r", "t": b"\t",
+                       "v": b"\v", '"': b'"', "\\": b"\\"}
+                if nxt in esc:
+                    out.extend(esc[nxt])
+                else:
+                    out.extend(nxt.encode("utf-8"))
+                i += 2
+                continue
+            out.extend(c.encode("utf-8"))
+            i += 1
+        p = out.decode("utf-8", "replace")
+    if p == "/dev/null":
+        return None
+    if len(p) > 2 and p[0] in "ab" and p[1] == "/":
+        p = p[2:]
+    return p
+
+
+def _diff_git_path(line):
+    """Best-effort path from a `diff --git a/PATH b/PATH` line (headings only; hunks carry the exact paths).
+    Quoted paths are C-unescaped; an unquoted path with spaces (`diff --git a/x y b/x y`) is cut by symmetry:
+    the line is "a/P b/P", so P is the text between "a/" and the middle " b/"."""
+    rest = line[len("diff --git "):]
+    m = re.match(r'("(?:[^"\\]|\\.)*") ("(?:[^"\\]|\\.)*")$', rest)
+    if m:
+        return _diff_header_path("+++ " + m.group(2))
+    if rest.startswith("a/"):  # unquoted: the line is "a/P b/P", so cut P where the two halves are equal
+        for mid in (x.start() for x in re.finditer(" b/", rest)):
+            a_side = rest[2:mid]
+            if a_side and a_side == rest[mid + 3:]:
+                return a_side
+    m = re.match(r"(\S+) (\S+)$", rest)
+    return _diff_header_path("+++ " + m.group(2)) if m else None
+
+
+def gaming_flags(diff_text):
+    """Test-file gaming patterns in a unified `git diff` (HX-49, observe only): a list of
+    {"file", "kind", "line"} for the kinds skip, sleep, retry, assert_removed and test_deleted. A `--- X` line
+    directly followed by `+++ Y` is a file heading everywhere (hand-written diffs need no `@@`), and content is
+    counted only after such a heading. In a real `git diff` the `@@ -a,b +c,d @@` counters bound the hunk, so a
+    content line such as `--- x` (removed "-- x") or `+++ y` (added "++ y") is never read as a heading."""
+    flags, line_flags = [], []
+    n_added_assert = n_removed_assert = 0
+    path, deleted, in_content, hdr_seen, git_mode = None, False, False, False, False
+    old_left = new_left = 0
+
+    def flush():
+        nonlocal path, line_flags, deleted, in_content, hdr_seen, git_mode
+        nonlocal n_added_assert, n_removed_assert, old_left, new_left
+        if path and is_test_file(path):
+            if deleted:  # a deleted file only reports test_deleted, never assert_removed
+                flags.append({"file": path, "kind": "test_deleted", "line": ""})
+            else:
+                flags.extend(line_flags)
+                if n_removed_assert > n_added_assert:
+                    flags.append({"file": path, "kind": "assert_removed",
+                                  "line": f"removed={n_removed_assert} added={n_added_assert}"})
+        path, line_flags, deleted, in_content, hdr_seen, git_mode = None, [], False, False, False, False
+        n_added_assert = n_removed_assert = old_left = new_left = 0
+
+    def content(raw):
+        nonlocal n_added_assert, n_removed_assert
+        body = raw[1:]
+        added_line = raw[0] == "+"
+        if any(m in body for m in _ASSERT_MARKERS):
+            if added_line:
+                n_added_assert += 1
+            else:
+                n_removed_assert += 1
+        if not added_line:
+            return
+        text = body[:200]  # the stored line is cut, but the markers are matched on the whole added line
+        if any(m in body for m in _SKIP_MARKERS):
+            line_flags.append({"file": path, "kind": "skip", "line": text})
+        if any(m in body for m in _SLEEP_MARKERS):
+            line_flags.append({"file": path, "kind": "sleep", "line": text})
+        if any(m in body.lower() for m in _RETRY_MARKERS):
+            line_flags.append({"file": path, "kind": "retry", "line": text})
+
+    # split("\n") (not splitlines): form-feed and U+2028 are content, and a CRLF tail is trimmed per line.
+    lines = [ln[:-1] if ln.endswith("\r") else ln for ln in diff_text.split("\n")]
+    for i, raw in enumerate(lines):
+        nxt = lines[i + 1] if i + 1 < len(lines) else ""
+        if old_left > 0 or new_left > 0:  # inside a git hunk: count against the @@ counters, never a heading
+            if raw.startswith("+"):
+                new_left = max(new_left - 1, 0)
+                content(raw)
+            elif raw.startswith("-"):
+                old_left = max(old_left - 1, 0)
+                content(raw)
+            elif raw.startswith(" "):
+                old_left, new_left = max(old_left - 1, 0), max(new_left - 1, 0)
+            continue
+        if raw.startswith("--- ") and nxt.startswith("+++ "):
+            if hdr_seen:  # a second heading pair is the next file (hand-written diff without `diff --git`)
+                flush()
+            path = _diff_header_path(nxt) or _diff_header_path(raw)
+            in_content, hdr_seen = True, True
+            continue
+        if raw.startswith("diff --git "):
+            flush()
+            path = _diff_git_path(raw)
+            git_mode = True
+            continue
+        m = re.match(r"@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@", raw)
+        if m and git_mode:  # hand-written diffs without `diff --git` keep the old heading-only behaviour
+            old_left = int(m.group(1)) if m.group(1) is not None else 1
+            new_left = int(m.group(2)) if m.group(2) is not None else 1
+            continue
+        if not in_content:
+            if raw.startswith("deleted file mode"):
+                deleted = True
+            continue
+        if raw.startswith("+") or raw.startswith("-"):
+            content(raw)
+    flush()
+    return flags
+
+
+def gaming_diff(wt, base, other=None):
+    """Bytes-safe diff for the gaming scan (HX-49): pinned prefixes, no external diff, no textconv.
+    In a worktree (no `other`) untracked files are included the same way the gate's changed-file set is;
+    with `other`, the plain `base other` diff of a repo is returned. Output is decoded with "replace"."""
+    wt = str(wt)
+    cmd = ["git", "-C", wt, "-c", "core.quotepath=off", "diff", "--no-ext-diff", "--no-textconv",
+           "--src-prefix=a/", "--dst-prefix=b/"]
+    if other is None:
+        ex = link_excludes(wt)
+        subprocess.run(["git", "-C", wt, "add", "-N", ".", *ex], capture_output=True, text=False)
+        cmd += [base, "--", ".", *ex]
+    else:
+        cmd += [base, other]
+    r = subprocess.run(cmd, capture_output=True, text=False)
+    if r.returncode != 0:
+        sys.exit(f"hx: command failed: {cmd}\n{r.stderr[-2000:].decode('utf-8', 'replace')}")
+    return r.stdout.decode("utf-8", "replace")
+
+
 def cmd_gate(a):
     p = task_paths(a.task)
     wt, base = p["worktree"], p["base"]
@@ -1173,6 +1348,14 @@ def cmd_gate(a):
     out_of_scope = [f for f in files if not match_any(f, allow)]
     touched_protected = [f for f in files if match_any(f, protect)]
     results = {"changed": files, "out_of_scope": out_of_scope, "protected_touched": touched_protected}
+    try:  # HX-49: observe only, never part of the PASS/FAIL decision
+        gaming = gaming_flags(gaming_diff(wt, base))
+    except (Exception, SystemExit) as e:
+        gaming = []
+        results["gaming_error"] = f"{type(e).__name__}: {e}"[:200]
+        print(f"[hx] gate: gaming scan failed ({results['gaming_error']}); gate decision unaffected", file=sys.stderr)
+    results["gaming_flags"] = gaming
+    results["gaming_mode"] = "observe"
     if no_tests:
         results["no_tests"] = True
     env, env_dropped = child_env(dict(os.environ), CFG.get("env_passthrough") or [])
@@ -1237,8 +1420,13 @@ def cmd_gate(a):
     if no_tests:  # the result JSON records that the gate ran without any test command
         gate_json["no_tests"] = True
     (p["state"] / "last_gate.json").write_text(json.dumps(gate_json))
-    metric({"task": a.task, "event": "gate", **{k: v for k, v in results.items() if k != "changed"}, "n_changed": len(files)})
+    metric({"task": a.task, "event": "gate",
+            **{k: v for k, v in results.items() if k not in ("changed", "gaming_flags")},
+            "gaming_flags": len(gaming), "n_changed": len(files)})
     print(json.dumps(results, ensure_ascii=False))
+    if gaming:
+        print(f"[hx] gate: {len(gaming)} gaming flag(s) (observe only): "
+              + ", ".join(dict.fromkeys(f["kind"] for f in gaming)))
     (p["state"] / "last_gate.txt").write_text(json.dumps(results, ensure_ascii=False, indent=1) + ("\n\n" + "\n".join(fails) if fails else ""))
     if fails:
         fb = p["state"] / "last_gate_failure.txt"
@@ -1251,6 +1439,28 @@ def cmd_gate(a):
     else:
         (p["state"] / "last_gate_failure.txt").unlink(missing_ok=True)
     sys.exit(0 if ok else 1)
+
+
+def cmd_scan_gaming(a):
+    """Apply gaming_flags to `git -C <repo> diff <rev1> <rev2>` (HX-49). Observe only: it never gives a verdict.
+    Both revisions are resolved to commits first, so a value starting with `-` is never read as a git option, and a
+    missing repo or an unknown revision exits non-zero."""
+    revs = []
+    for rev in (a.rev1, a.rev2):
+        r = subprocess.run(["git", "-C", a.repo, "rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}"],
+                           capture_output=True, text=False)
+        if r.returncode != 0:
+            sys.exit(f"hx: not a commit in {a.repo}: {rev}\n{r.stderr[-2000:].decode('utf-8', 'replace')}")
+        revs.append(r.stdout.decode("utf-8", "replace").strip())
+    flags = gaming_flags(gaming_diff(a.repo, revs[0], revs[1]))
+    if a.json:
+        out = json.dumps(flags, ensure_ascii=False)
+    else:
+        out = "\n".join(f"{f['kind']}\t{f['file']}\t{f['line']}" for f in flags)
+    enc = sys.stdout.encoding or "utf-8"
+    if out:
+        sys.stdout.write(out.encode(enc, "replace").decode(enc) + "\n")
+    print(f"flags={len(flags)}")
 
 
 # ------------------------------------------------------------------ diff / commit / note / report
@@ -1522,6 +1732,9 @@ def main():
     s.add_argument("--no-tests", action="store_true", help="gate without running any test command (recorded as no_tests in the result)")
     s.add_argument("--retry", type=int, default=CFG.get("gate_retry", 1), help="re-run the visible test command this many times on failure")
     s.add_argument("--gate-timeout", type=int, default=CFG.get("gate_timeout_s", 1800)); s.set_defaults(fn=cmd_gate)
+    s = sp.add_parser("scan-gaming"); s.add_argument("repo"); s.add_argument("rev1"); s.add_argument("rev2")
+    s.add_argument("--json", action="store_true", help="print the flag list as JSON")
+    s.set_defaults(fn=cmd_scan_gaming)
     s = sp.add_parser("diff"); s.add_argument("task"); s.add_argument("--all", action="store_true", help="whole task, all phases"); s.set_defaults(fn=cmd_diff)
     s = sp.add_parser("review"); s.add_argument("task"); s.add_argument("output", help="file holding the reviewer's output"); s.set_defaults(fn=cmd_review)
     s = sp.add_parser("commit"); s.add_argument("task"); s.add_argument("-m", required=True)
