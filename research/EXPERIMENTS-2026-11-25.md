@@ -35,5 +35,20 @@ Daha küçük diff, denetçi girdisini ve kapsam dışı değişiklik riskini d�
   benimsendikten sonra `hx report` denetçi reddi oranıyla izlenir (eşik > %40 → geri alınır).
 - Yerel `main`'e birleştirme, push yok.
 
-## Sonuç
-(ölçümden sonra eklenecek)
+## Sonuç — KEEP (2026-11-25)
+
+| Metrik | A (2 tekrar) | B (2 tekrar) | Eşik | Durum |
+|---|---|---|---|---|
+| Üretilen kod satırı (toplam) | 2082 | 1540 (×0,740) | ≤ ×0,80 | geçti |
+| Doğruluk (base + hard) | 34/36 + 14/14 = 48 | 34/36 + 14/14 = 48 | B ≥ A | geçti |
+| A'nın 2/2 geçip B'nin 2/2 düştüğü görev | — | yok | yok | geçti |
+
+- Düşenler: A1 t02 ("ve" yasağı), A2 t11_low2 (SyntaxError), B1 t02, B2 t09. Lab v5'teki gürültü düzeyi (görev başına bir kayıp).
+- Hard katmanında satır ×0,82 (824 → 676); h03, h04, h06, h07'nin hepsinde B daha kısa. Tüm hard görevleri iki kolda 7/7 geçti.
+- **Dikkat (eşik kararını değiştirmez):**
+  - Farkın büyük kısmı belirsiz t05'ten ("basit bir not uygulaması yaz") geliyor: B2 98 satır, diğer üç koşu ≈380–400. t05 hariç oran ×0,822, yani eşiğin hemen üstünde. Gerçek etki büyük ihtimalle %15–20.
+  - B2 t09'u düşürdü: var olmayan fonksiyonu doğru reddetti, ama mevcut bağımlılıktaki `HTTPAdapter` + `Retry` yerine kendi sarmalayıcısını yazdı. Bu, kuralın amacının tersi; n=1, izlenmeli.
+- Ölçüm sapması (kayıt için): `loc.py`'nin ilk sürümü cevaptaki satır içi ` ```python ` ifadesini blok başı sayıyordu (B1 t03 = 0 satır). Regex yalnız satır başındaki çitleri sayacak şekilde düzeltildi. Her iki kol aynı betikle yeniden ölçüldü; karar değişmedi (önce ×0,738, sonra ×0,740).
+- Altyapı: h06 bir rate-limiter görevi. Çıktıdaki "rate limit" metni `run_oc.py`'nin limit sezgisini tetikledi ve gereksiz yeniden denemeler yapıldı (HX-23 ile aynı yanlış pozitif sınıfı). Her kolda son deneme kaydedildi.
+- Maliyet: kol başına ≈$0,08 (`hx.est_cost`), toplam ≈$0,32. Veri: `lab/hx47*.log`, `lab/results_hx47*.json`, `lab/loc_hx47.json`.
+- Uygulanan: `worker.md` ← B; `reviewer.md` 2. madde genişletildi. Denetçi değişikliği lab'da ölçülmedi. Sonraki 2 haftada `hx report` denetçi reddi oranı > %40 olursa geri alınır.

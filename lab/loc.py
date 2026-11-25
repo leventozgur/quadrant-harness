@@ -17,7 +17,7 @@ import run_oc as R  # noqa: E402
 TEXT_ONLY = {"t01", "t02", "t08", "t10", "t12"}
 SKIP_DIRS = {"__pycache__", ".git", ".opencode", "node_modules", ".pytest_cache", ".venv"}
 SKIP_SUFFIX = {".pyc", ".db", ".sqlite", ".sqlite3", ".png", ".jpg", ".gif", ".zip"}
-FENCE = re.compile(r"```[^\n]*\n(.*?)```", re.S)
+FENCE = re.compile(r"^[ \t]*```[^\n`]*\n(.*?)^[ \t]*```", re.S | re.M)  # fences at line start only
 
 
 def files(root: Path):
