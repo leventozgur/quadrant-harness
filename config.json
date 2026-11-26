@@ -26,6 +26,7 @@
       "note": "gizli test başarısızlığını sınıflar: TEST_HATASI (spec'e aykırı test) / KOD_HATASI (kural ihlali); farklı aile; #low: BA-31 gerçek vakasında 2/2 doğru TEST_HATASI, 139 s, ~$0.03"
     }
   },
+  "sandbox_repos": ["Mizan", "BrainAtlas"],
   "prices": {
     "opencode-go/beam-free": {
       "input": 0,

@@ -42,13 +42,35 @@ def repo_root():
     return Path(sh(["git", "rev-parse", "--show-toplevel"]).stdout.strip())
 
 
-def state_dir():
+def git_common_dir():
     common = Path(sh(["git", "rev-parse", "--git-common-dir"]).stdout.strip())
     if not common.is_absolute():
         common = (Path.cwd() / common).resolve()
-    d = common / "hx"
+    return common
+
+
+def state_dir():
+    d = git_common_dir() / "hx"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def sandbox_repo_match(common_dir, names):
+    """True when `common_dir`'s main checkout matches `names` (absolute realpath or exact directory name)."""
+    if not names:
+        return False
+    common = Path(common_dir)
+    checkout = common.parent if common.name == ".git" else common
+    checkout_real = os.path.realpath(str(checkout))
+    for name in names:
+        if not isinstance(name, str):
+            continue
+        if os.path.isabs(name):
+            if os.path.realpath(name) == checkout_real:
+                return True
+        elif checkout.name == name:
+            return True
+    return False
 
 
 def task_paths(task):
@@ -749,9 +771,13 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
         reserved = p["state"] / f"{role_name}-{n}.jsonl"
         reserved.write_text("")
     sandbox = bool(role.get("sandbox"))
+    sandbox_reason = "role" if sandbox else None
     if sandbox and (sees_hidden or read_only or role.get("read_only")):
         print(f"hx: sandbox ignored for role {role_name}", file=sys.stderr)
-        sandbox = False
+        sandbox, sandbox_reason = False, None
+    if not sandbox and not (sees_hidden or read_only or role.get("read_only")):
+        if sandbox_repo_match(git_common_dir(), CFG.get("sandbox_repos")):
+            sandbox, sandbox_reason = True, "repo"
     if sandbox:
         try:
             if sys.platform != "darwin" or shutil.which("sandbox-exec") is None:
@@ -802,6 +828,7 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
         rec["hidden_paths"] = hidden_hits[:5]
     if sandbox:
         rec["sandbox"] = True
+        rec["sandbox_reason"] = sandbox_reason
     if reaped_procs:
         rec["reaped_procs"] = reaped_procs
     if force:
