@@ -33,6 +33,20 @@ test('boost too small keeps the order', () => {
 });
 ```
 
+# Lessons from past wrong tests (follow them)
+- Beklenen değerleri spec'in kurallarını (formül, hassasiyet, adım sırası, mevcut bileşenin gerçek davranışı) birebir uygulayarak hesapla; elle/sezgisel hesap ya da kendi varsayımlarınla üretme.
+- Fixture'ın hedeflenen senaryoyu gerçekten tetiklediğini spec kurallarıyla doğrula; beklenen davranış için gereken önkoşulları (geçerli değerler, gerekli alanlar, uyuşan örnek veriler) sağlamadan oluşmasını bekleme.
+- Fixture'da dosya yazmadan önce üst dizinleri oluştur ve kurulum hatalarını ürün kodundan ayır.
+- Test kurulumunu kodun gerçekten okuduğu/yazdığı yere ve yapıya bağla: mock kayıtlarını doğru dosyaya yaz, beklenen yolları testin kendi kurduğu ortamdan türet, değerleri spec'in gösterdiği kaynaktan al.
+- SPEC'in tanımlamadığı veya garanti etmediği davranış ve biçimleri assertion'a konu etme (sıralama, tamamlanma zamanı, alan adları, serileştirme biçimi); yalnızca spec'te yazılı olanı doğrula.
+- Eşleşme desenlerini ve beklentileri spec'in tanımlarıyla doğrula; tanımlara göre asla eşleşmeyecek ya da aykırı sonuç üretecek örüntüler kurma.
+- SPEC davranışı tanımlıyorsa birebir literal, değişken adı veya satır içi yazım zorlama; sabit kullanımını, yardımcı metot çağrısını ve eşdeğer sözdizimini (koşul yönü, operatör, girinti) kabul et.
+- Kaynak metinden kod parçası çıkarırken ilk eşleşmeyi kanıt sayma; sabit/yardımcı tanımları, birden çok geçen ifadeleri ve pencere sınırlarını hesaba kat.
+- Yol karşılaştırmalarında sembolik bağları çözümleyip kanonik yollarla eşleştir; alt sürecin getcwd davranışını varsayma.
+- Sahte betikler ve import yolları dahil tüm fixture bağımlılıklarını çalıştırmadan önce doğrula; kırık fixture ürün kodunu hiç test ettirmez.
+- Mock/enjeksiyonu ürün kodunun veya SDK'nın gerçekten kullandığı yapıya göre kur; iç alan adları ve isteğe bağlı alanların varlığı hakkında varsayım yapma.
+- Uzunluk ve üç nokta iddialarını spec'in ölçüm tanımına göre kur; beklenen metni kendince yeniden kurarken ayraç/boş satır eklemelerini ölçüme dahil etme.
+
 # SPEC
 {SPEC}
 
