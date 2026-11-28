@@ -1,5 +1,7 @@
 Görev: <tek, somut iş>
-Bağlam: <dosya yolları, mevcut API'ler, giriş/çıktı örnekleri, hata mesajı>
+Bağlam: <mevcut API'ler, giriş/çıktı örnekleri, hata mesajı>
+Bağlam paketi: <worker'ın önce okuyacağı dosyalar (yol:satır aralığı), ilgili imzalar, kullanılacak mevcut yardımcılar,
+  benzer bir örnek dosya; amaç worker'ın repoyu baştan aramaması — en çok ~10 kalem>
 Kurallar: <iş kuralları; sınır durumlarını tek tek yaz: boş girdi, yarı-açık aralık,
   eşitlikte hangi taraf, yuvarlama, negatif değer, None, hatalı tip, eşzamanlılık>
 Kapsam: <değiştirilebilir dosyalar (glob)>. DOKUNMA: <korunan dosyalar (glob)>

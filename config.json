@@ -10,7 +10,7 @@
       "model": "opencode-go/qwen3.7-plus#high",
       "template": "tester.md",
       "cwd": "hidden",
-      "note": "2026-11-16 reverted to Qwen3.7 Plus#high after real CodartERP P1-P6: Haiku 5.5 produced 38 TEST_HATASI over 6 tasks (~6.3/task vs Qwen ~2/task). Haiku kept as fallback. 2026-11-16 lab v6: Haiku 5.5 (default effort) ref-pass 7/7, kill 28/28, 222 s, ~$0.03; real BA-38/BA-32b 2 TEST_HATASI, ~$0.01/task. Previous: Qwen3.7 Plus#high 7/7, 25/28, 1195 s; real 4 TEST_HATASI, ~$0.13/task (fallback). Watch TEST_HATASI count on the next 2-3 real tasks; revert to fallback if worse than Qwen.",
+      "note": "HX-55 (2026-11-28): optional high-assurance tester (hx pair / hx call tester) while tester_mode is 'pm'. 2026-11-16 reverted to Qwen3.7 Plus#high after real CodartERP P1-P6: Haiku 5.5 produced 38 TEST_HATASI over 6 tasks (~6.3/task vs Qwen ~2/task). Haiku kept as fallback. 2026-11-16 lab v6: Haiku 5.5 (default effort) ref-pass 7/7, kill 28/28, 222 s, ~$0.03; real BA-38/BA-32b 2 TEST_HATASI, ~$0.01/task. Previous: Qwen3.7 Plus#high 7/7, 25/28, 1195 s; real 4 TEST_HATASI, ~$0.13/task (fallback). Watch TEST_HATASI count on the next 2-3 real tasks; revert to fallback if worse than Qwen.",
       "fallback": "opencode-go/claude-haiku-5-5"
     },
     "escalate": {
@@ -26,7 +26,23 @@
       "note": "gizli test başarısızlığını sınıflar: TEST_HATASI (spec'e aykırı test) / KOD_HATASI (kural ihlali); farklı aile; #low: BA-31 gerçek vakasında 2/2 doğru TEST_HATASI, 139 s, ~$0.03"
     }
   },
-  "sandbox_repos": ["Mizan", "BrainAtlas"],
+  "tester_mode": "pm",
+  "tester_mode_note": "HX-55 (2026-11-28): 'pm' = Opus writes the hidden acceptance tests (templates/acceptance.md) and hx auto runs worker only; 'model' = tester role (hx pair, Qwen) + judge (hx triage). Evidence: 2026-11-10..26 tester = ~55% of Go spend, 143 TEST_HATASI vs 15 KOD_HATASI, recorded model suites caught 3/16 seeded defects (HX-46). Model tester stays available for high-assurance tasks: hx pair / hx call tester.",
+  "auto_escalate": true,
+  "budget": {
+    "opencode_db": "~/.local/share/opencode/opencode.db",
+    "limits_usd": {
+      "5h": 12,
+      "7d": 30,
+      "30d": 60
+    },
+    "warn_at": 0.8,
+    "note": "OpenCode Go limits are dollar based; 12/30/60 is the older documented figure (docs now: 5h = 20%, week = 50% of the monthly limit). Rolling windows here vs anchored windows at Go: warning signal only, no hard cap (user decision). Check the Console for the billing figure."
+  },
+  "sandbox_repos": [
+    "Mizan",
+    "BrainAtlas"
+  ],
   "prices": {
     "opencode-go/beam-free": {
       "input": 0,

@@ -6,7 +6,12 @@
                                                    run the role's OpenCode model; prints only its final text
                                                    (--resume continues that role's last session, e.g. after TIMEOUT;
                                                    worker/escalate calls are capped per phase, --force-retry overrides)
-  hx.py pair   <task> <spec.md>                    tester and worker in parallel (independent inputs)
+  hx.py auto   <task> <spec.md> --allow GLOBS [--protect] [--test] [--hidden-cmd] [--fresh]
+                                                   one phase end to end: worker → gate → feedback → retry/escalate →
+                                                   diff; prints a short summary (HX-55, default flow)
+  hx.py tests  <task> [--fresh]                    register the PM-written hidden acceptance suite (tester_mode pm)
+  hx.py budget [--json]                            estimated Go spend, rolling 5h/7d/30d, from the local OpenCode DB
+  hx.py pair   <task> <spec.md>                    tester and worker in parallel (tester_mode model / high assurance)
   hx.py triage <task> <spec.md>                    judge model classifies failing hidden tests; writes
                                                    worker_feedback.txt (rules only, no test code)
   hx.py gate   <task> --test CMD [--hidden-cmd CMD] --allow GLOBS [--protect GLOBS] [--no-tests]
@@ -817,6 +822,7 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
     if hidden_hits:  # the gate refuses until the hidden tests are rewritten (see cmd_gate / clear_hidden_flag)
         (p["state"] / "hidden_access.json").write_text(json.dumps(
             {"ha_v": 2, "role": role_name, "n": n, "paths": hidden_hits[:10],
+             "suite_sha256": hidden_suite(p)[1],  # the suite as it was after the access (hx tests --fresh, HX-55)
              "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}))
     elif role_name == "tester":  # the tester wrote a fresh hidden suite: earlier access no longer matters
         (p["state"] / "hidden_access.json").unlink(missing_ok=True)
@@ -1733,6 +1739,310 @@ def cmd_report(a):
     print_report_summary(report_summary(window, CFG.get("report_thresholds")), since)
 
 
+# ------------------------------------------------------------------ HX-55: PM acceptance tests, budget, auto loop
+def hidden_suite(p):
+    """Files of the hidden acceptance suite (relative paths, sorted) and a sha256 over their names and bytes."""
+    import hashlib
+    root = p["hidden"]
+    files = sorted(f for f in root.rglob("*") if f.is_file() and "__pycache__" not in f.parts
+                   and not f.name.startswith(".")) if root.exists() else []
+    h = hashlib.sha256()
+    for f in files:
+        h.update(str(f.relative_to(root)).encode() + b"\0" + f.read_bytes() + b"\0")
+    return [str(f.relative_to(root)) for f in files], h.hexdigest()
+
+
+def cmd_tests(a):
+    """Register the hidden acceptance suite the PM wrote (tester_mode "pm"). --fresh: the suite was rewritten after a
+    hidden_access flag, so the flag is cleared (the same role `hx call tester` plays in tester_mode "model")."""
+    p = task_paths(a.task)
+    names, digest = hidden_suite(p)
+    if not names:
+        sys.exit(f"hx: no acceptance tests in {p['hidden']}; write them there first (templates/acceptance.md)")
+    cleared = False
+    if a.fresh:
+        ha = p["state"] / "hidden_access.json"
+        if ha.exists():
+            try:
+                flagged = json.loads(ha.read_text()).get("suite_sha256")
+            except (OSError, ValueError, AttributeError):
+                flagged = None
+            if flagged is None:  # flag from before HX-55: compare with the last registered suite instead
+                prev = []
+                mp = state_dir() / "metrics.jsonl"
+                for line in (mp.read_text().splitlines() if mp.exists() else []):
+                    try:
+                        r = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(r, dict) and r.get("task") == a.task and r.get("event") == "pm_tests":
+                        prev.append(r.get("suite_sha256"))
+                flagged = prev[-1] if prev else None
+            if flagged == digest:
+                sys.exit("hx: --fresh refused: the acceptance suite is the same as when a model call touched it; "
+                         "rewrite the tests first")
+            cleared = True
+            ha.unlink()
+    metric({"task": a.task, "event": "pm_tests", "files": len(names), "suite_sha256": digest, "fresh": bool(a.fresh),
+            "cleared_hidden_access": cleared})
+    print(f"[hx] acceptance suite: {len(names)} file(s), sha256 {digest[:12]}"
+          + ("; hidden_access flag cleared" if cleared else "") + "\n" + "\n".join(f"- {n}" for n in names[:20]))
+
+
+BUDGET_WINDOWS = (("5h", 5 * 3600), ("7d", 7 * 86400), ("30d", 30 * 86400))
+
+
+def go_spend(now=None, db=None):
+    """Estimated OpenCode Go spend (USD, list prices) in rolling 5h / 7d / 30d windows, read-only from the local
+    OpenCode database. None when the database is missing or unreadable. Go's own windows are anchored, not rolling,
+    so this is a warning signal, not the billing figure."""
+    import sqlite3
+    cfg = CFG.get("budget") or {}
+    path = Path(os.path.expanduser(db or cfg.get("opencode_db") or "~/.local/share/opencode/opencode.db"))
+    if not path.exists():
+        return None
+    now = now or time.time()
+    cutoff = int((now - BUDGET_WINDOWS[-1][1]) * 1000)
+    try:
+        con = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
+        try:
+            rows = con.execute("SELECT time_created, data FROM session_message WHERE type = 'assistant' "
+                               "AND time_created >= ? AND data LIKE '%opencode-go%'", (cutoff,)).fetchall()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return None
+    spend = {k: 0.0 for k, _ in BUDGET_WINDOWS}
+    for created, data in rows:
+        try:
+            j = json.loads(data)
+        except ValueError:
+            continue
+        m = j.get("model") or {}
+        t = j.get("tokens") or {}
+        if m.get("providerID") != "opencode-go" or not t:
+            continue
+        cache = t.get("cache") or {}
+        cost = est_cost(f"opencode-go/{m.get('id', '')}", {
+            "input": t.get("input", 0), "output": t.get("output", 0), "reasoning": t.get("reasoning", 0),
+            "cache_read": cache.get("read", 0), "cache_write": cache.get("write", 0)}) or 0.0
+        age = now - created / 1000
+        for k, secs in BUDGET_WINDOWS:
+            if age <= secs:
+                spend[k] += cost
+    return {k: round(v, 2) for k, v in spend.items()}
+
+
+def budget_line(spend=None):
+    """One line `5h $a/$A (p%) · 7d … · 30d …`, with WARNING when a window passes budget.warn_at (default 0.8)."""
+    spend = go_spend() if spend is None else spend
+    if spend is None:
+        return "[hx] budget: OpenCode database not readable; check usage in the OpenCode Console"
+    cfg = CFG.get("budget") or {}
+    limits = cfg.get("limits_usd") or {}
+    warn_at = cfg.get("warn_at", 0.8)
+    parts, warn = [], []
+    for k, _ in BUDGET_WINDOWS:
+        lim = limits.get(k)
+        if lim:
+            ratio = spend[k] / lim
+            parts.append(f"{k} ${spend[k]:.2f}/${lim:g} ({ratio:.0%})")
+            if ratio >= warn_at:
+                warn.append(k)
+        else:
+            parts.append(f"{k} ${spend[k]:.2f}")
+    return ("[hx] Go budget (estimate): " + " · ".join(parts)
+            + (f"  WARNING: {', '.join(warn)} at ≥{warn_at:.0%}; prefer small tasks or wait for the window" if warn else ""))
+
+
+def cmd_budget(a):
+    spend = go_spend()
+    if a.json:
+        print(json.dumps({"spend_usd": spend, "limits_usd": (CFG.get("budget") or {}).get("limits_usd")}))
+    else:
+        print(budget_line(spend))
+
+
+_TAP_FAIL = re.compile(r"^\s*not ok\b(?:\s+\d+)?\s*(?:-\s*)?(.*)$")
+_UNITTEST_FAIL = re.compile(r"^(?:FAIL|ERROR): (\S+) \(")
+_PYTEST_FAIL = re.compile(r"^(?:FAILED|ERROR) \S*?::(\S+)")
+_DOTNET_FAIL = re.compile(r"^\s*Failed (\S+)(?: \[|$)")
+
+
+def failing_test_names(log, hidden=None, limit=20):
+    """Names of failing tests in a test log (TAP, unittest, pytest, dotnet), without assertion messages or test
+    code. In tester_mode "pm" the PM names every test after the rule it checks, so the name is the feedback.
+    A unittest docstring line right after the FAIL heading is kept (it states the rule)."""
+    names = []
+    lines = (log or "").splitlines()
+    for i, line in enumerate(lines):
+        name = None
+        m = _TAP_FAIL.match(line)
+        if m and "# TODO" not in line and "# SKIP" not in line:
+            name = m.group(1).strip()
+        elif _UNITTEST_FAIL.match(line):
+            name = _UNITTEST_FAIL.match(line).group(1)
+            nxt = lines[i + 1].strip() if i + 1 < len(lines) else ""
+            if nxt and not nxt.startswith(("---", "===", "Traceback")):
+                name += f" — {nxt}"
+        elif _PYTEST_FAIL.match(line):
+            name = _PYTEST_FAIL.match(line).group(1)
+        elif _DOTNET_FAIL.match(line):
+            name = _DOTNET_FAIL.match(line).group(1)
+        if not name:
+            continue
+        if hidden:
+            for form in sorted({str(hidden), os.path.realpath(str(hidden))}, key=len, reverse=True):  # longest first
+                name = name.replace(form, "<gizli>")
+        name = re.sub(r"\[[^\]]*\]", "", name).strip()[:200]  # parametrised ids may carry expected values
+        if name and name not in names:
+            names.append(name)
+    return names[:limit]
+
+
+def _quiet(fn, ns):
+    """Run a cmd_* handler with its stdout captured; returns (exit code, stdout text)."""
+    import contextlib, io
+    buf = io.StringIO()
+    code = 0
+    with contextlib.redirect_stdout(buf):
+        try:
+            fn(ns)
+        except SystemExit as e:
+            code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+            if isinstance(e.code, str):
+                buf.write(e.code + "\n")
+    return code, buf.getvalue()
+
+
+def _call_cost(line):
+    m = re.search(r"cost≈\$([0-9.]+)", line or "")
+    return float(m.group(1)) if m else 0.0
+
+
+def cmd_auto(a):
+    """Mechanical loop for one phase (HX-55): worker → gate → (feedback → worker)… → escalate → diff.
+    Feedback is built only from what the policy already allows the worker to see: the visible failure, the files
+    outside the allowed scope, and — in tester_mode "pm" — the names of failing acceptance tests (no test code, no
+    assertion text). Stops and hands back to the PM on anything that needs judgement. Prints a short summary;
+    full texts stay in the state directory."""
+    check_stop()
+    p = task_paths(a.task)
+    st = p["state"]
+    mode = CFG.get("tester_mode", "model")
+    if not a.allow:
+        sys.exit("hx: auto needs --allow GLOBS (use --allow '**' to allow every path)")
+    if not (a.test or a.hidden_cmd or a.no_tests):
+        sys.exit("hx: auto needs --test or --hidden-cmd (or --no-tests)")
+    if a.hidden_cmd and not hidden_suite(p)[0]:
+        sys.exit(f"hx: --hidden-cmd given but {p['hidden']} is empty; write the acceptance tests first "
+                 f"(tester_mode {mode}: {'templates/acceptance.md + hx tests' if mode == 'pm' else 'hx pair'})")
+    print(budget_line())
+    gate_ns = argparse.Namespace(task=a.task, test=a.test, hidden_cmd=a.hidden_cmd, allow=a.allow, protect=a.protect,
+                                 no_tests=a.no_tests, retry=a.retry, gate_timeout=a.gate_timeout)
+    cost, calls, gates, gate_fails = 0.0, [], 0, 0
+    prev_hidden = None
+
+    def call(role, feedback=None, resume=False):
+        nonlocal cost
+        if not resume:
+            check_retry_budget(a.task, role)
+        _, out, line = run_role(role, a.task, a.spec, feedback=feedback, resume=resume)
+        n = sum(1 for f in st.glob(f"{role}-*.jsonl") if f.stem[len(role) + 1:].isdigit())
+        rep = st / f"auto_{role}_{n}_report.txt"
+        rep.write_text(out)
+        cost += _call_cost(line)
+        calls.append(role)
+        print(line)
+        if ("TIMEOUT(" in line or "STALLED(" in line) and not resume:
+            print(f"[hx] auto: {role} stopped early; resuming the same session once")
+            call(role, feedback=feedback, resume=True)
+
+    def finish(status, msg, code):
+        metric({"task": a.task, "event": "auto", "status": status, "calls": calls, "gates": gates,
+                "gate_fails": gate_fails, "go_cost_est": round(cost, 4), "tester_mode": mode})
+        print(f"[hx] auto {a.task}: {status} — worker×{calls.count('worker')} escalate×{calls.count('escalate')} "
+              f"gates {gates} ({gate_fails} fail) Go≈${cost:.3f}")
+        print(msg)
+        sys.exit(code)
+
+    def next_role():
+        if len(phase_calls(a.task, "worker")) < 1 + max_worker_retries():
+            return "worker"
+        if CFG.get("auto_escalate", True) and not phase_calls(a.task, "escalate"):
+            return "escalate"
+        return None
+
+    if getattr(a, "feedback", None):  # PM rule or reviewer findings: one round with them, then the loop
+        if not Path(a.feedback).exists():
+            sys.exit(f"hx: feedback file not found: {a.feedback}")
+        role = next_role()
+        if not role:
+            finish("RETRIES_EXHAUSTED", "worker retries and escalate already used in this phase; stop and report", 5)
+        call(role, feedback=a.feedback)
+    elif a.fresh or not phase_calls(a.task, "worker"):
+        call("worker")
+    while True:
+        code, out = _quiet(cmd_gate, gate_ns)
+        gates += 1
+        res = {}
+        for ln in out.splitlines():  # the gate may print "[hx] gate: …" lines before its JSON result
+            if ln.startswith("{"):
+                try:
+                    cand = json.loads(ln)
+                except ValueError:
+                    continue
+                if isinstance(cand, dict) and "gate" in cand:
+                    res = cand
+                    break
+        if res.get("gate") == "PASS":
+            _, dout = _quiet(cmd_diff, argparse.Namespace(task=a.task, all=False))
+            lines = dout.strip().splitlines()
+            finish("PASS", f"next: blind review (templates/reviewer.md) SPEC={a.spec} DIFF={lines[0] if lines else st / 'review.diff'} "
+                   f"GATE={st / 'last_gate.txt'} ({lines[-1] if lines else ''}); then hx review / hx commit", 0)
+        if not res:
+            finish("GATE_ERROR", f"gate did not run: {out.strip()[-400:]}", 2)
+        gate_fails += 1
+        if res.get("hidden_access"):
+            finish("HIDDEN_ACCESS", f"a model call touched the hidden tests; rewrite them, `hx tests {a.task} --fresh`, "
+                   f"then `hx auto {a.task} … --fresh`. Details: {st / 'last_gate.txt'}", 3)
+        parts = []
+        if res.get("out_of_scope") or res.get("protected_touched"):
+            bad = list(dict.fromkeys((res.get("out_of_scope") or []) + (res.get("protected_touched") or [])))
+            parts.append("Bu dosyalar kapsam dışı veya korunuyor; bu dosyalardaki değişiklikleri geri al (spec'in Kapsam "
+                         "bölümüne uy):\n" + "\n".join(f"- {f}" for f in bad[:30]))
+        if res.get("tests") in ("fail", "timeout") and (st / "visible_failure.txt").exists():
+            parts.append((st / "visible_failure.txt").read_text())
+        if res.get("hidden") == "timeout":
+            finish("HIDDEN_TIMEOUT", f"acceptance tests timed out; check {st / 'hidden.log'}", 4)
+        if res.get("hidden") != "fail":
+            prev_hidden = None  # SAME_HIDDEN_FAIL means consecutive rounds only
+        if res.get("hidden") == "fail":
+            if mode != "pm":
+                finish("HIDDEN_FAIL", f"run `hx triage {a.task} {a.spec}` (tester_mode model; judge decides test vs code)", 4)
+            log = (st / "hidden.log").read_text(errors="replace") if (st / "hidden.log").exists() else ""
+            names = failing_test_names(log, p["hidden"])
+            if not names:
+                finish("HIDDEN_FAIL_UNPARSED", f"acceptance tests failed but no test names were found; read "
+                       f"{st / 'hidden_failure.txt'} and decide", 4)
+            if prev_hidden is not None and set(names) == set(prev_hidden):
+                finish("SAME_HIDDEN_FAIL", "the same acceptance tests still fail after feedback: check the test against "
+                       f"the spec ({st / 'hidden_failure.txt'}), fix test or spec, or feed back a precise rule", 4)
+            prev_hidden = names
+            parts.append("Gizli kabul testlerinden şunlar düştü (test kodu paylaşılmaz; her test adı kontrol ettiği "
+                         "spec kuralını anlatır):\n" + "\n".join(f"- {n}" for n in names))
+        if not parts:
+            finish("GATE_FAIL", f"gate failed for a reason auto cannot feed back; read {st / 'last_gate.txt'}", 4)
+        fb = st / f"auto_feedback_{gates}.txt"
+        fb.write_text("\n\n".join(parts))
+        role = next_role()
+        if not role:
+            finish("RETRIES_EXHAUSTED", f"worker retries and escalate used; stop and report (last feedback: {fb})", 5)
+        print(f"[hx] auto: gate FAIL ({', '.join(k for k in ('out_of_scope', 'protected_touched', 'tests', 'hidden') if res.get(k) and res.get(k) != 'pass')}); "
+              f"{role} with {fb.name}")
+        call(role, feedback=str(fb))
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hx")
     sp = ap.add_subparsers(dest="cmd", required=True)
@@ -1771,6 +2081,20 @@ def main():
     s = sp.add_parser("report"); s.add_argument("--since", help="only records from the last 12h/7d/2w; thresholds from config.report_thresholds")
     s.set_defaults(fn=cmd_report)
     s = sp.add_parser("prices"); s.add_argument("--refresh", action="store_true"); s.set_defaults(fn=cmd_prices)
+    s = sp.add_parser("tests", help="register the PM-written hidden acceptance suite (tester_mode pm)")
+    s.add_argument("task"); s.add_argument("--fresh", action="store_true", help="suite rewritten: clear the hidden_access flag")
+    s.set_defaults(fn=cmd_tests)
+    s = sp.add_parser("budget", help="estimated Go spend in rolling 5h/7d/30d windows (local OpenCode database)")
+    s.add_argument("--json", action="store_true"); s.set_defaults(fn=cmd_budget)
+    s = sp.add_parser("auto", help="worker → gate → feedback loop → escalate → diff for one phase; short summary")
+    s.add_argument("task"); s.add_argument("spec"); s.add_argument("--test"); s.add_argument("--hidden-cmd")
+    s.add_argument("--allow"); s.add_argument("--protect")
+    s.add_argument("--no-tests", action="store_true", help="gate without running any test command")
+    s.add_argument("--retry", type=int, default=CFG.get("gate_retry", 1), help="re-run the visible test command this many times on failure")
+    s.add_argument("--gate-timeout", type=int, default=CFG.get("gate_timeout_s", 1800))
+    s.add_argument("--fresh", action="store_true", help="start with a new worker call even if this phase already has one")
+    s.add_argument("--feedback", help="first a worker call with this feedback file (PM rule, reviewer findings), then the loop")
+    s.set_defaults(fn=cmd_auto)
     a = ap.parse_args()
     a.fn(a)
 

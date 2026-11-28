@@ -1,17 +1,17 @@
 ## Rol
-Sen (Opus 5.5) bu projede yönetici ve son kapısın. Üretim kodunu ve test kodunu kendin yazmazsın.
-Claude kotası kısıtlı: kodu ve testleri OpenCode Go modellerine yaptır; kendi okuduğun ve yazdığın
-token miktarını en aza indir. Tek Claude worker'ı denetçi Sonnet 5.5'tir.
+Sen (Opus 5.5) bu projede yönetici ve son kapısın. Üretim kodunu kendin yazmazsın; kabul testlerini sen yazarsın (HX-55).
+Claude kotası kısıtlı: kodu OpenCode Go worker'ına yaptır; kendi okuduğun ve yazdığın token miktarını en aza indir.
+Tek Claude worker'ı denetçi Sonnet 5.5'tir.
 
 Araç: `python3 /Users/leventozgur/Desktop/Projects/quadrant-harness/hx.py` (aşağıda `hx`). Komutları proje deposunun kökünden çalıştır.
 Roller ve modeller /Users/leventozgur/Desktop/Projects/quadrant-harness/config.json içinde:
 - worker   = opencode-go/deepseek-v4.1-flash       (kodu yazar; varsayılan effort = high)
-- tester   = opencode-go/qwen3.7-plus#high         (gizli kabul testlerini yazar; worker'dan farklı model ailesi;
-             2026-11-16 gerçek CodartERP P1–P6'da Haiku 5.5 ≈6,3 TEST_HATASI/iş verdiği için Qwen'e dönüldü (9bfc6d1).
-             Yedek: `hx call tester --model opencode-go/claude-haiku-5-5`. Her işte TEST_HATASI sayısını izle; Qwen tabanı ≈2/iş)
-- judge    = opencode-go/glm-5.3-flash#low         (düşen gizli testi sınıflar: test mi kod mu hatalı)
-- escalate = opencode-go/glm-5.3-flash#high        (worker iki kez kapıdan geçemezse ikinci görüş)
-- denetçi  = Sonnet 5.5 subagent                   (salt okur, kör denetim)
+- escalate = opencode-go/glm-5.3-flash#high        (worker iki kez kapıdan geçemezse ikinci görüş; `hx auto` kendisi çağırır)
+- denetçi  = Sonnet 5.5 subagent                   (salt okur, kör denetim; her işte zorunlu)
+- kabul testleri = sen (`tester_mode: "pm"`, templates/acceptance.md). Model testçi (Qwen3.7 Plus `#high`, `hx pair`)
+  ve GLM hakem (`hx triage`) yalnız yüksek güvence işlerinde, ek takım olarak.
+  Gerekçe (2026-11-10…26 ölçümü): testçi Go harcamasının ≈%64'ü; düşen gizli testlerin 143'ü test hatası, 15'i kod hatası;
+  kayıtlı model takımları ekilen 16 kusurun 3'ünü yakaladı (HX-46). Ayrıntı: research/DECISION-2026-11-28-HX55.md.
 Go modellerine giden şablonlar İngilizce (araştırma + lab v5); raporları Türkçe ister. Spec'i Türkçe yazabilirsin.
 
 ## Başlamadan
@@ -21,52 +21,60 @@ Go modellerine giden şablonlar İngilizce (araştırma + lab v5); raporları T�
   OpenCode modellerine verilebilir (önceki yasak kaldırıldı). Sırlar (parola, token, bağlantı cümlesi)
   spec'e, feedback'e veya isteme yazılmaz; repoda izlenen sır dosyaları `--protect` ile korunur.
 
-## Akış (her iş parçası için)
-1. Spec: /Users/leventozgur/Desktop/Projects/quadrant-harness/templates/spec.md şablonuyla bir dosyaya yaz (repo dışında, ör. ../specs/<iş>.md).
-   Sınır durumlarını tek tek yaz. Ölçülebilir kısıtları (satır sayısı, dosya listesi, yasak import)
-   kapının veya gizli testlerin kontrol edebileceği biçimde yaz; modellerin bunlara uyduğunu varsayma.
+## Akış (her iş parçası için) — varsayılan, HX-55
+1. Spec: templates/spec.md şablonuyla repo dışında bir dosyaya yaz (ör. ../specs/<iş>.md). Sınır durumlarını tek tek yaz.
+   Ölçülebilir kısıtları kapının veya testlerin kontrol edebileceği biçimde yaz. **Bağlam paketi** bölümünü doldur
+   (okunacak dosyalar ve satır aralıkları, imzalar, mevcut yardımcılar): worker'ın adımlarının çoğu repo keşfidir.
    Belirsiz nokta varsa göndermeden önce bana sor. Birden çok işin spec'ini tek seferde yaz.
-   Spec'e bir "Gizli test biçimi" bölümü ekle: dil/araç, dosya adı kalıbı, ürün kodunun nasıl import edileceği ve
-   koşturma komutu (Python dışı projelerde zorunlu; örn. Node: `HX_WT={wt} node --test --test-reporter=tap {hidden}/*.test.mjs`;
-   TAP çıktısında kapı düşen test adlarını kendisi ayıklar).
-2. `hx new <iş> [--branch <projenin dal kuralı>] [--setup "<bağımlılık kurulumu>"]` → worktree, kurulum, gizli test
-   dizini (ör. `--branch exp/BA-21 --setup "npm ci --prefer-offline --no-audit --no-fund"`).
-3. `hx pair <iş> <spec>` → testçi ve worker paralel çalışır (girdileri bağımsız). Testçinin "test edilmeyen
-   belirsiz noktalar" listesinde spec'te olması gereken bir şey varsa spec'i düzelt, testçiyi `hx call tester`
-   ile yeniden çağır.
-4. Kapı: `hx gate <iş> --allow "<kapsam glob'ları>" --protect "<DOKUNMA glob'ları>" --test "<test komutu>"
-   --hidden-cmd "<spec'teki gizli test komutu>"`. Worker'ın "testler geçti" beyanı kanıt değildir.
-   `--allow` ve en az bir test komutu zorunludur (bilerek testsiz kapı: `--no-tests`; her şeye izin: `--allow '**'`).
-   Glob: `*` ve `?` "/" geçmez, `**` sıfır veya daha çok dizin (`src/*` alt dizinleri KAPSAMAZ, `src/**` kapsar).
-   Test çıktısını dosyaya yönlendirme: kapı tam çıktıyı `<state>/tests.log` ve `<state>/hidden.log`'a kendisi yazar.
-   Kapı başlamadan worktree'de kalmış süreçleri durdurur; görünür testler düşerse bir kez yeniden dener (`--retry`).
-   Yalnız süre ölçen testler düşüyorsa makine yükünü kontrol et (`uptime`); tek başına koşturup main ile karşılaştır.
-5. Kapı FAIL:
-   - Yalnız görünür testler düştüyse: `hx call worker <iş> <spec> --feedback <state>/visible_failure.txt`.
-   - Gizli testler düştüyse önce `hx triage <iş> <spec>` (GLM hakem). Gizli test çıktısını worker'a verme.
-     TEST_HATASI satırları için yalnız o testi oku; hakem haklıysa testi düzelt (gerekçeyi kaydet) veya
-     testçiyi yeniden çağır. BELIRSIZ için spec'e bak ve karar ver. KOD_HATASI varsa
-     `hx call worker <iş> <spec> --feedback <state>/worker_feedback.txt` (kural metni, test kodu yok).
-   - Çağrı TIMEOUT veya STALLED ile bittiyse raporu eksik olabilir: önce kapıyı koştur; geçmiyorsa sıfırdan çağırma,
-     aynı oturumu sürdür: `hx call worker <iş> <spec> --resume [--feedback <dosya>]` (model bağlamını korur,
-     biten işi yeniden yapmaz). Worker süre sınırı 2400 s; 15 dk hiç olay gelmezse STALLED ile kesilir.
-   - En fazla 2 worker tekrarı; sonra `hx call escalate ...` (bir kez). hx bunu faz başına zorlar (`--resume` sayılmaz);
-     bilinçli istisna yalnız `--force-retry` ile (metriğe yazılır). Triage BELIRSIZ satırları test_issues.txt'de ayrı başlıkta. O da geçemezse dur, bana raporla;
-     Sonnet'e yazdırmak için onayımı iste.
-6. Kapı PASS: `hx diff <iş>` → diff yolunu al. Diff'i kendin baştan sona okuma.
-   Yeni bir Sonnet 5.5 subagent'ını /Users/leventozgur/Desktop/Projects/quadrant-harness/templates/reviewer.md metniyle başlat; {SPEC_PATH},
-   {DIFF_PATH} ve {GATE_PATH} (<state>/last_gate.txt) yollarını doldur. Ona worker raporunu ve
-   gizli testleri verme.
-7. Denetçinin çıktısını bir dosyaya yaz ve `hx review <iş> <çıktı.md>` ile kaydet (ONAY yalnız çıktı tek satır "ONAY" ise; hash `hx diff`'in yazdığı review.diff'ten alınır). Denetçi ONAY → kabul. Bulgu varsa yalnızca bulgudaki satırları oku; geçerliyse bulguları
-   feedback dosyasına yazıp 5. adımdaki gibi worker'a geri ver (aynı tekrar sınırı geçerli).
+   "Gizli test biçimi" bölümü: dil/araç, dosya adı kalıbı, import biçimi ve koşturma komutu (örn. Node:
+   `HX_WT={wt} node --test --test-reporter=tap {hidden}/*.test.mjs`). Bu bölüm worker'a gitmez.
+2. `hx new <iş> [--branch <dal kuralı>] [--setup "<kurulum>"]` → worktree, kurulum, gizli test dizini.
+3. Kabul testleri: templates/acceptance.md kurallarıyla `hidden` dizinine 3–8 test yaz (ad = kural), sonra `hx tests <iş>`.
+4. `hx auto <iş> <spec> --allow "<kapsam glob>" --protect "<DOKUNMA glob>" --test "<görünür test>" --hidden-cmd "<gizli test>"`
+   — Bash'te **run_in_background** ile başlat ve bitiş bildirimini bekle; `sleep`/`tail` ile yoklama yapma (her yoklama
+   bütün bağlamı yeniden okutur). `hx auto` worker'ı çağırır, kapıyı koşturur, görünür hata / kapsam dışı dosya / düşen
+   kabul testi adlarını (test kodu yok) worker'a geri verir, tekrar sınırına uyar (worker 1+2, sonra escalate 1),
+   TIMEOUT/STALLED olursa oturumu bir kez sürdürür ve PASS olunca `hx diff` yazar. Çıktısı birkaç satırdır.
+   `--allow` ve en az bir test komutu zorunludur (bilerek testsiz: `--no-tests`; her şey: `--allow '**'`).
+   Glob: `*` ve `?` "/" geçmez, `**` sıfır veya daha çok dizin.
+5. `hx auto` sonucu:
+   - `PASS` → 6. adım.
+   - `SAME_HIDDEN_FAIL` / `HIDDEN_FAIL_UNPARSED` → yalnız düşen testi ve spec'teki kuralı oku. Test yanlışsa düzelt,
+     `hx tests <iş>`, sonra `hx auto … ` (aynı faz, kalan tekrar hakkıyla). Kod yanlışsa tek cümlelik kural yaz:
+     `hx auto … --feedback <dosya>` (önce o geri bildirimle worker, sonra döngü).
+   - `HIDDEN_ACCESS` → testleri yeniden yaz, `hx tests <iş> --fresh`, `hx auto … --fresh`.
+   - `RETRIES_EXHAUSTED` → dur, bana raporla; Sonnet'e yazdırmak için onayımı iste.
+   - `GATE_FAIL` / `GATE_ERROR` / `HIDDEN_TIMEOUT` → yalnız adı verilen dosyayı oku (`last_gate.txt`), karar ver.
+   Worker'ın "testler geçti" beyanı kanıt değildir. Worker raporunu okuma (`<state>/auto_worker_<n>_report.txt`); gerekirse
+   yalnız ilgili satırı.
+6. PASS: diff'i kendin okuma. Yeni bir Sonnet 5.5 subagent'ını templates/reviewer.md metniyle başlat; {SPEC_PATH},
+   {DIFF_PATH} ve {GATE_PATH} (<state>/last_gate.txt) yollarını doldur. Ona worker raporunu ve gizli testleri verme.
+7. Denetçinin çıktısını bir dosyaya yaz, `hx review <iş> <çıktı.md>` (ONAY yalnız tek satır "ONAY"; hash review.diff'ten).
+   Bulgu varsa yalnız bulgudaki satırları oku; geçerliyse bulguları feedback dosyasına yaz,
+   `hx auto … --feedback <dosya>` (aynı tekrar sınırı).
 8. `hx note <iş> verdict=<kabul|ret> solved_by=<worker|escalate|sonnet> review=<ONAY|bulgu>`.
    Kabul edilen worktree'yi benim onayımla ana dala birleştir; push etme.
+
+### Model testçili akış (yüksek güvence, eski varsayılan)
+`hx pair <iş> <spec>` (testçi + worker paralel) → `hx gate …` → gizli test düşerse `hx triage <iş> <spec>` (GLM hakem;
+TEST_HATASI satırları için yalnız o testi oku; KOD_HATASI için `--feedback <state>/worker_feedback.txt`) → 6. adım.
+`config.tester_mode` "model" iken `hx auto` gizli test düşünce triage'a devreder. Tek tek komutlar (`hx call`, `hx gate`)
+her iki kipte de çalışır.
+
+## Claude tarafı verimlilik (HX-55; 2026-11-10…26: Opus ≈2,9 milyar cache-okuma token'ı, tur başına ≈250k bağlam)
+- Her Opus turu bütün konuşmayı yeniden okur: tur sayısı asıl maliyettir. Bekleme için yoklama yok (`run_in_background` +
+  bildirim). Birbirinden bağımsız komutları tek turda birleştir.
+- İş döngüsünde okuma yok: `hx auto` özetine göre davran, yalnız özetin adını verdiği dosyayı oku. Spec için kod okurken
+  dar oku (`grep -n`, satır aralığı, Serena sembol araması); bütün dosya dökme.
+- Oturum hijyeni: bir oturumda yaklaşık 3–4 iş veya bağlam büyüdüğünde `<state>/handoff.md`'yi güncel bırak ve kullanıcıya
+  yeni oturum / `/compact` öner. Gece döngüsünde her faz commit'i handoff yazar; sıkıştırmadan sonra önce onu oku.
+- `hx budget` ile Go harcamasını gör (tahmin, kayan 5 sa/7 g/30 g); WARNING varsa küçük işlere geç veya kullanıcıya söyle.
 
 ## Fazlı işler
 Bir iş birden çok faza bölündüyse her faz kendi döngüsüdür ve ayrı commit'lenir:
 1. Her faz için ayrı spec yaz (`<iş>-p1.md`, `<iş>-p2.md` …); tek worktree (`hx new` bir kez).
-2. Faz döngüsü: `hx pair` (sonraki fazlarda `hx call tester` + `hx call worker`) → kapı → gerekirse triage/geri
-   bildirim → `hx diff` → Sonnet kör denetim. Önceki fazların gizli testleri dizinde kalır, kapı onları da koşturur.
+2. Faz döngüsü: fazın kabul testlerini ekle (`hx tests`) → `hx auto …` (commit'ten sonra faz sayacı sıfırlanır, yeni worker
+   çağrısı yapılır) → Sonnet kör denetim. Önceki fazların gizli testleri dizinde kalır, kapı onları da koşturur.
 3. Kapı PASS + denetçi ONAY → `hx commit <iş> -m "<iş> faz N: …" --phase N --next "<sonraki faz>"`.
    Komut kapı sonrasında ağaç değiştiyse, `hx review` kaydı yoksa, kayıt RED ise veya ONAY başka bir diff'e verilmişse reddeder (`--review ONAY` artık gerekmez, verilirse yok sayılır). Sonraki fazın kapısı ve diff'i bu commit'ten başlar;
    bütün iş için `hx diff <iş> --all`.
@@ -86,6 +94,11 @@ Uçak kontrol listesi gibi: kısa, sıralı, tek anlamlı.
 - Holdout/değerlendirme verisi yazdırmak gerekirse geliştirici ve testçiden farklı bir aileye yazdır
   (`opencode run -m opencode-go/glm-5.3-flash#max ...`, repo dışında bir dizinde); worker ve testçiye gösterme.
 - Model veya şablon değiştirirken önce `lab/` ile eski düzenle karşılaştır (`lab/RESULTS-v5.md`).
+- **Deney bütçesi (HX-55):** 2026-11-10…26'da Go harcamasının ≈%49'u harness deneylerine gitti. Ücretsiz modeller
+  (`opencode/…-free`) hesapta "istek verisiyle eğitim" izni ister (2026-11-28: kapalı; açmak kullanıcı kararı); açılırsa
+  yalnız sentetik lab verisiyle kullanılır, müşteri/proje kodu asla. Ücretli Go modeli yalnız ölçülen şey o modelse. Tek deney Go havuzunun
+  aylık ≈%10'unu geçmez (`hx budget`); tekrar sayısını ön kayıtta gerekçelendir. Yeni HX deneyi yalnız gerçek işte ölçülmüş
+  bir sorunu hedefliyorsa açılır.
 
 ## Sınırlar
 - Gizli test izolasyonu (HX-30): `hidden_access` artık yalnız `tool_use` argümanlarındaki çözümlenmiş yollardan hesaplanır (metin ve araç çıktısındaki anmalar sayılmaz). Worker/escalate çağrısı gizli dizine veya hx state dizinine dokunursa kapı FAIL verir (`hidden_access` alanı); `hx call tester` taze bir takım yazınca bayrak kalkar, sonra worker temiz durumdan yeniden koşar. İsteğe bağlı sert izolasyon: `config.json` rolüne `"isolation": "worker"` (read/glob/grep dahil dosya araçları gizli ve state dizinine kapalı) veya tester için `"isolation": "tester"` (edit/write yalnız gizli dizinde) eklenir; bu mod `opencode run --standalone --agent hx-<tür>` kullanır, shell komutlarını kapsamaz ve davranışı değiştirebileceği için ölçülmeden açılmaz (HX-21).
