@@ -1,9 +1,10 @@
 # quadrant-harness
 
-Opus 5.5 yönetici + OpenCode Go worker/testçi/hakem + Sonnet 5.5 kör denetçi düzeni.
+Opus 5.5 yönetici (spec + kabul testleri) + OpenCode Go worker + Sonnet 5.5 kör denetçi düzeni. Model testçi/hakem
+(Qwen/GLM) yüksek güvence işleri için isteğe bağlı (HX-55, `research/DECISION-2026-11-28-HX55.md`).
 
 - `ORCHESTRATOR.md` — Opus'a verilecek talimat (yollar bu klasöre göre).
-- `hx.py` — stdlib CLI: `new`, `pair`, `call [--resume]`, `gate`, `triage`, `diff [--all]`, `commit` (onaylı faz commit + `handoff.md`), `note`, `report`, `prices [--refresh]`. Durum: hedef reponun `.git/hx/`.
+- `hx.py` — stdlib CLI: `new`, `tests`, `auto` (varsayılan faz döngüsü), `budget`, `pair`, `call [--resume]`, `gate`, `triage`, `diff [--all]`, `commit` (onaylı faz commit + `handoff.md`), `note`, `report`, `prices [--refresh]`. Durum: hedef reponun `.git/hx/`.
 - `config.json` — roller/modeller/fiyatlar; `templates/` — spec, worker, tester, judge, reviewer.
 - `lab/` — model seçimi laboratuvarı (worker ve tester rolü; RESULTS-v3/v4). Model veya şablon değişince regresyon kontrolü.
   Not: `lab/run_ds.py`, `extract_haiku.py` eski oturum yollarına bağlı tarihsel betiklerdir.
