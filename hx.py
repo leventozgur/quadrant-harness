@@ -846,7 +846,7 @@ def run_role(role_name, task, spec_path, feedback=None, model=None, read_only=Fa
     max_chars = max_chars or CFG["max_chars"]
     if len(out) > max_chars:
         out = out[: max_chars] + f"\n…[truncated; full text in {p['state']}/{role_name}-{n}.jsonl]"
-    line = (f"[hx] {role_name}#{n}{' (resumed)' if resume else ''} {model} {secs}s steps={steps} out={tok['output']+tok['reasoning']} cost≈${rec['go_cost_est']}"
+    line = (f"[hx] {role_name}#{n}{' (resumed)' if resume else ''} {model} {secs}s steps={steps} out={tok['output']+tok['reasoning']} cost≈${rec['go_cost_est'] or 0}"
             + (" WARNING: touched the hidden-test directory" if rec["hidden_access"] else "")
             + (f" TIMEOUT({limit}s; continue with --resume)" if timeout and not stalled else "") + (f" STALLED(no event for {stall_limit}s)" if stalled else "")
             + (f" reaped={reaped} leftover processes" if reaped else ""))

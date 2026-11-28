@@ -95,8 +95,9 @@ Uçak kontrol listesi gibi: kısa, sıralı, tek anlamlı.
   (`opencode run -m opencode-go/glm-5.3-flash#max ...`, repo dışında bir dizinde); worker ve testçiye gösterme.
 - Model veya şablon değiştirirken önce `lab/` ile eski düzenle karşılaştır (`lab/RESULTS-v5.md`).
 - **Deney bütçesi (HX-55):** 2026-11-10…26'da Go harcamasının ≈%49'u harness deneylerine gitti. Ücretsiz modeller
-  (`opencode/…-free`) hesapta "istek verisiyle eğitim" izni ister (2026-11-28: kapalı; açmak kullanıcı kararı); açılırsa
-  yalnız sentetik lab verisiyle kullanılır, müşteri/proje kodu asla. Ücretli Go modeli yalnız ölçülen şey o modelse. Tek deney Go havuzunun
+  (`opencode/…-free`) hesapta "istek verisiyle eğitim" izni ister (kullanıcı 2026-11-28'de açtı); bu yüzden yalnız sentetik
+  lab verisiyle kullanılır, müşteri/proje kodu asla. 2026-11-28 gerçek duman testi: `deepseek-v4.1-flash-free` worker,
+  `hx auto` ilk turda PASS (12 s, 5 adım). Ücretli Go modeli yalnız ölçülen şey o modelse. Tek deney Go havuzunun
   aylık ≈%10'unu geçmez (`hx budget`); tekrar sayısını ön kayıtta gerekçelendir. Yeni HX deneyi yalnız gerçek işte ölçülmüş
   bir sorunu hedefliyorsa açılır.
 
